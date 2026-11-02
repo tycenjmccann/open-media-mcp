@@ -126,9 +126,38 @@ Measured on one `g7e.4xlarge` (RTX PRO 6000 Blackwell, 96 GB), 5 s clips:
 Iterate on `draft4`, then re-run the keeper on `full` with the same seed. The first ever boot (weights from
 Hugging Face, about 70 GB for Wan 2.2) reached its first render in about 6 minutes; later boots load from S3.
 
-GPU time is billed only while a worker exists: spot `g7e.4xlarge` has been about USD 1.3-2/hour in us-east-1
-(on-demand is about USD 4). A cold start (boot + model load) adds about 5-6 minutes; `gpu_capacity warm` hides it. Fixed costs while idle: the KMS key (USD 1/month), the S3 model cache (about USD 1.6/month for 70 GB),
-and pennies of Lambda, DynamoDB and SQS.
+### What a clip costs
+
+GPU cost per 5 s clip on spot `g7e.4xlarge` (USD 1.27/hour in us-east-1 on 2026-11-02; on-demand is USD 4.00):
+
+| Here (your account) | Render | Cost per 5 s clip |
+|---|---|---|
+| Wan 2.2 720p, `draft4` | 79 s | **USD 0.03** |
+| Wan 2.2 720p, `full` | 669 s | **USD 0.24** |
+| MiniMax-H3 768p with audio, `full` | about 3 min | **USD 0.06** |
+
+Each warm-up adds a cold start (about USD 0.13) and the idle tail before scale-in (20 min, about USD 0.42), so
+the more clips per session, the cheaper each one gets. Fixed cost while idle: the KMS key (USD 1/month) and the S3
+weight cache (about USD 1.6/month for Wan 2.2).
+
+Hosted API list prices for a 5 s clip, read from each pricing page on 2026-11-02:
+
+| Hosted API | Tier | Per 5 s clip |
+|---|---|---|
+| fal, Wan 2.2 A14B (same model as `wan2.2`) | 720p | USD 0.40 |
+| Replicate, Wan 2.2 A14B image-to-video | 720p | about USD 1.00 |
+| fal, MiniMax H3-max | 768p | USD 0.40 |
+| Google Vertex, Veo 3.1 / Fast / Lite (with audio) | 720p | USD 2.00 / 0.50 / 0.25 |
+| Google, Omni Flash 1.1 | 720p | USD 0.51 |
+| xAI, Grok Imagine Video 1.5 / Lite | 720p | USD 0.70 / 0.15 |
+| fal, Kling 2.6 Pro (audio on) / Kling 4.0 | 720p | USD 0.70 / 0.79 |
+| fal, Seedance 2.5 | 720p | USD 2.37 |
+| Runway Gen-4.5 · Luma Ray3.2 | 720p | USD 0.60 · 0.30 |
+
+**When this wins:** volume and iteration (50 drafts in one session is about USD 2 all in), data that must stay in
+your account, one governed endpoint for many agents and teams. **When an API wins:** a handful of one-off clips
+(a single full Wan clip with a cold start costs about USD 0.79 here vs USD 0.40 on fal), or when you need the
+top closed models (Veo 3.1, Kling 4.0) for quality.
 
 ## Repo layout
 
