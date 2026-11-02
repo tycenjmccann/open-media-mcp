@@ -51,6 +51,7 @@ events = boto3.client("events", config=cfg)
 cw = boto3.client("cloudwatch", config=cfg)
 cwlogs = boto3.client("logs", config=cfg)
 asg = boto3.client("autoscaling", config=cfg)
+ec2 = boto3.client("ec2", config=cfg)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("worker")
@@ -109,6 +110,43 @@ def metric(name, value=1.0, unit="Count"):
             "Dimensions": [{"Name": "Stack", "Value": E["MEDIA_STACK"]}]}])
     except Exception as exc:
         log.warning("metric %s failed: %s", name, exc)
+
+
+_PRICE = {}
+
+
+def usd_per_hour():
+    """Live price of this instance: the AZ's current spot price, or the on-demand list price."""
+    if "v" in _PRICE and time.time() - _PRICE["t"] < 900:
+        return _PRICE["v"], _PRICE["basis"]
+    price, basis = None, ""
+    try:
+        if INSTANCE["lifecycle"] == "spot":
+            h = ec2.describe_spot_price_history(InstanceTypes=[INSTANCE["instance_type"]], AvailabilityZone=INSTANCE["az"],
+                                                ProductDescriptions=["Linux/UNIX"], MaxResults=1)["SpotPriceHistory"]
+            price, basis = float(h[0]["SpotPrice"]), f"spot price, {INSTANCE['az']}"
+        else:
+            pricing = boto3.client("pricing", region_name="us-east-1")
+            loc = {"us-east-1": "US East (N. Virginia)", "us-east-2": "US East (Ohio)", "us-west-2": "US West (Oregon)"}.get(REGION)
+            items = pricing.get_products(ServiceCode="AmazonEC2", MaxResults=1, Filters=[
+                {"Type": "TERM_MATCH", "Field": f, "Value": v} for f, v in (
+                    ("instanceType", INSTANCE["instance_type"]), ("location", loc), ("operatingSystem", "Linux"),
+                    ("tenancy", "Shared"), ("preInstalledSw", "NA"), ("capacitystatus", "Used"))])["PriceList"]
+            od = json.loads(items[0])["terms"]["OnDemand"]
+            price = float(next(iter(next(iter(od.values()))["priceDimensions"].values()))["pricePerUnit"]["USD"])
+            basis = "on-demand list price"
+    except Exception as exc:
+        log.warning("price lookup failed: %s", exc)
+    _PRICE.update(v=price, basis=basis, t=time.time())
+    return price, basis
+
+
+def job_cost(gpu_seconds):
+    price, basis = usd_per_hour()
+    return {"gpu_seconds": round(gpu_seconds, 1), "usd_per_hour": price, "basis": basis,
+            "usd": round(price * gpu_seconds / 3600, 5) if price else None,
+            "instance_type": INSTANCE["instance_type"], "lifecycle": INSTANCE["lifecycle"],
+            "scope": "this job's time on the GPU; boot and idle time are fleet overhead (see cost_report)"}
 
 
 def status_file(phase, job_id=None):
@@ -486,6 +524,7 @@ def run_job(job, hb, tmp):
                    "has_audio": "audio" in kinds, "sha256": manifest["output"]["sha256"]},
         "timings": {"render_s": round(render_s, 1), "total_s": round(time.time() - t_start, 1)},
         "moderation": moderation,
+        "cost": job_cost(time.time() - t_start),
     }
 
 
@@ -517,6 +556,8 @@ def handle(msg):
         sqs.delete_message(QueueUrl=E["MEDIA_QUEUE_URL"], ReceiptHandle=receipt)
         metric("JobSucceeded")
         metric("RenderSeconds", result["timings"]["render_s"], "Seconds")
+        if result["cost"]["usd"] is not None:
+            metric("JobCostUsd", result["cost"]["usd"], "None")
         audit(event="job_succeeded", job_id=job_id, **result["timings"])
         emit(item, "SUCCEEDED", {"output": result["output"]})
     except Cancelled:

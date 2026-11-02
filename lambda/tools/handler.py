@@ -32,6 +32,8 @@ sqs = boto3.client("sqs", config=cfg)
 s3 = boto3.client("s3", config=cfg.merge(Config(signature_version="s3v4")), region_name=os.environ.get("AWS_REGION"))
 asg = boto3.client("autoscaling", config=cfg)
 bedrock = boto3.client("bedrock-runtime", config=cfg)
+cloudwatch = boto3.client("cloudwatch", config=cfg)
+ec2 = boto3.client("ec2", config=cfg)
 
 with open(os.path.join(os.path.dirname(__file__), "backends.json")) as fh:
     ALL_BACKENDS = json.load(fh)
@@ -346,7 +348,7 @@ def get_job(args, caller):
     spec = json.loads(item.pop("spec"))
     out = {k: item.get(k) for k in ("job_id", "status", "phase", "backend", "created_at", "started_at",
                                     "render_started_at", "finished_at", "attempt", "error", "timings", "labels",
-                                    "moderation", "quarantine_key") if item.get(k) is not None}
+                                    "moderation", "quarantine_key", "cost") if item.get(k) is not None}
     out["request"] = {k: spec.get(k) for k in ("aspect", "seconds", "quality", "model", "seed") if spec.get(k) is not None}
     if item["status"] == "SUCCEEDED":
         o = item["output"]
@@ -370,8 +372,8 @@ def list_jobs(args, caller):
     items = table.query(**kw)["Items"]
     if want:
         items = [i for i in items if i.get("status") == want]
-    return {"jobs": [jsonable({k: i.get(k) for k in ("job_id", "status", "phase", "backend", "created_at", "prompt_preview")})
-                     for i in items[:limit]]}
+    return {"jobs": [jsonable({**{k: i.get(k) for k in ("job_id", "status", "phase", "backend", "created_at", "prompt_preview", "labels")},
+                               "cost_usd": (i.get("cost") or {}).get("usd")}) for i in items[:limit]]}
 
 
 def cancel_job(args, caller):
@@ -417,7 +419,63 @@ def gpu_capacity(args, caller):
     return f
 
 
-TOOLS = {f.__name__: f for f in (get_capabilities, create_upload, generate_video, get_job, list_jobs, cancel_job, gpu_capacity)}
+def cost_report(args, caller):
+    """Chargeback: exact per-job GPU cost for this caller, grouped by a label, plus the fleet's total instance time."""
+    days = max(1, min(90, int(args.get("days") or 7)))
+    group = args.get("group_by_label")
+    since = now() - timedelta(days=days)
+    kw = {"IndexName": "by_tenant", "KeyConditionExpression": "tenant = :t AND created_at >= :s",
+          "ExpressionAttributeValues": {":t": caller["tenant"], ":s": since.isoformat(timespec="seconds")}}
+    items = []
+    while True:
+        r = table.query(**kw)
+        items += r["Items"]
+        if "LastEvaluatedKey" not in r:
+            break
+        kw["ExclusiveStartKey"] = r["LastEvaluatedKey"]
+    items = jsonable(items)
+    by = {}
+    total = {"jobs": 0, "succeeded": 0, "usd": 0.0, "gpu_seconds": 0.0, "video_seconds": 0.0}
+    prices = []
+    for i in items:
+        c = i.get("cost") or {}
+        key = (i.get("labels") or {}).get(group, "(none)") if group else i.get("backend", "?")
+        b = by.setdefault(key, {"jobs": 0, "succeeded": 0, "usd": 0.0, "gpu_seconds": 0.0, "video_seconds": 0.0})
+        for t in (b, total):
+            t["jobs"] += 1
+            if i.get("status") == "SUCCEEDED":
+                t["succeeded"] += 1
+                t["video_seconds"] += (i.get("output") or {}).get("duration_s") or 0
+            t["usd"] += c.get("usd") or 0
+            t["gpu_seconds"] += c.get("gpu_seconds") or 0
+        if c.get("usd_per_hour"):
+            prices.append(c["usd_per_hour"])
+    for t in [total, *by.values()]:
+        t["usd"] = round(t["usd"], 4)
+        t["usd_per_video_second"] = round(t["usd"] / t["video_seconds"], 5) if t["video_seconds"] else None
+    # Fleet: every instance-hour the group ran (boot, render and idle), from the group's CloudWatch metric.
+    span = (now() - since).total_seconds()
+    period = max(60, math.ceil(span / 1440 / 60) * 60)
+    pts = cloudwatch.get_metric_statistics(
+        Namespace="AWS/AutoScaling", MetricName="GroupInServiceInstances",
+        Dimensions=[{"Name": "AutoScalingGroupName", "Value": E["MEDIA_ASG"]}],
+        StartTime=since, EndTime=now(), Period=period, Statistics=["Average"])["Datapoints"]
+    inst_hours = sum(p["Average"] for p in pts) * period / 3600
+    price = sum(prices) / len(prices) if prices else None
+    if price is None:
+        try:
+            h = ec2.describe_spot_price_history(InstanceTypes=[E["MEDIA_INSTANCE_TYPES"].split(",")[0]],
+                                                ProductDescriptions=["Linux/UNIX"], MaxResults=5)["SpotPriceHistory"]
+            price = min(float(x["SpotPrice"]) for x in h)
+        except ClientError:
+            pass
+    fleet = {"instance_hours": round(inst_hours, 3), "usd_per_hour": price,
+             "usd": round(inst_hours * price, 4) if price else None,
+             "note": "whole fleet, all callers: boot + render + idle time; jobs.usd is the part attributed to your jobs"}
+    return {"days": days, "group_by": group or "backend", "jobs": total, "groups": by, "fleet": fleet}
+
+
+TOOLS = {f.__name__: f for f in (get_capabilities, create_upload, generate_video, get_job, list_jobs, cancel_job, gpu_capacity, cost_report)}
 
 
 def reconcile():

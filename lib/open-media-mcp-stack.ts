@@ -144,8 +144,8 @@ export class OpenMediaMcpStack extends Stack {
     let guardrailArn = "";
     if (guardrailMode === "create") {
       const filters = [
-        ["SEXUAL", cfg.str("guardrailSexual", "HIGH")],
-        ["HATE", cfg.str("guardrailHate", "HIGH")],
+        ["SEXUAL", cfg.str("guardrailSexual", "MEDIUM")],
+        ["HATE", cfg.str("guardrailHate", "MEDIUM")],
         ["VIOLENCE", cfg.str("guardrailViolence", "MEDIUM")],
         ["INSULTS", cfg.str("guardrailInsults", "MEDIUM")],
         ["MISCONDUCT", cfg.str("guardrailMisconduct", "MEDIUM")],
@@ -159,9 +159,10 @@ export class OpenMediaMcpStack extends Stack {
           filtersConfig: filters.map(([type, strength]) => ({ type, inputStrength: strength, outputStrength: "NONE" })),
         },
       });
+      // The filter settings go in the description so any change publishes a new guardrail version.
       const v = new bedrock.CfnGuardrailVersion(this, "PromptGuardrailVersion", {
         guardrailIdentifier: g.attrGuardrailId,
-        description: "deployed by open-media-mcp",
+        description: `open-media-mcp filters ${filters.map(([t, st]) => `${t}=${st}`).join(" ")}`.slice(0, 200),
       });
       guardrailId = g.attrGuardrailId;
       guardrailVersion = v.attrVersion;
@@ -230,6 +231,8 @@ export class OpenMediaMcpStack extends Stack {
       }));
     }
     workerRole.addToPolicy(new iam.PolicyStatement({ actions: ["rekognition:DetectModerationLabels"], resources: ["*"] }));
+    // Per-job cost: the live price of the instance the job ran on.
+    workerRole.addToPolicy(new iam.PolicyStatement({ actions: ["ec2:DescribeSpotPriceHistory", "pricing:GetProducts"], resources: ["*"] }));
     workerRole.addToPolicy(new iam.PolicyStatement({
       actions: ["events:PutEvents"],
       resources: [`arn:${Aws.PARTITION}:events:${Aws.REGION}:${Aws.ACCOUNT_ID}:event-bus/default`],
@@ -326,6 +329,8 @@ export class OpenMediaMcpStack extends Stack {
         },
       },
       capacityRebalance: false,
+      // Instance-hour metrics feed the dashboard and cost_report's fleet total.
+      groupMetrics: [autoscaling.GroupMetrics.all()],
     });
     Tags.of(asg).add(stackTag, this.stackName, { applyToLaunchedInstances: false });
     Tags.of(asg).add("Name", `${this.stackName}-worker`, { applyToLaunchedInstances: true });
@@ -371,7 +376,8 @@ export class OpenMediaMcpStack extends Stack {
       conditions: { StringEquals: { [`autoscaling:ResourceTag/${stackTag}`]: this.stackName } },
     }));
     toolsFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ["autoscaling:DescribeAutoScalingGroups", "ec2:DescribeLaunchTemplateVersions", "ec2:DescribeInstances"],
+      actions: ["autoscaling:DescribeAutoScalingGroups", "ec2:DescribeLaunchTemplateVersions", "ec2:DescribeInstances",
+        "ec2:DescribeSpotPriceHistory", "cloudwatch:GetMetricStatistics"],
       resources: ["*"],
     }));
     // UpdateAutoScalingGroup re-validates the launch template, which carries the worker role.

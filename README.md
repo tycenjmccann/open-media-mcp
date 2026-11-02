@@ -29,8 +29,9 @@ limits. See [Adding a backend](THIRD_PARTY_MODELS.md#adding-a-backend).
 |---|---|
 | **No public endpoint** | AgentCore Gateway with `AWS_IAM` (SigV4) or `CUSTOM_JWT` (Cognito, Okta, Entra ID). There is no unauthenticated mode. GPU workers have no inbound rules; they pull from SQS. |
 | **Who did what** | A Gateway REQUEST interceptor stamps the verified caller (`tenant`, `principal`) on every tool call; clients can't forge it. Jobs, uploads, quotas and `list_jobs` are tenant-scoped. Every call and job transition is logged. |
-| **Content safety** | Prompts pass an **Amazon Bedrock Guardrail** (created for you, or bring your own) before any GPU time is spent. Input images and 6 sampled output frames pass **Amazon Rekognition** moderation; flagged renders go to `quarantine/` with no download URL (`BLOCKED`). |
+| **Content safety** | Prompts pass an **Amazon Bedrock Guardrail** (created for you with MEDIUM filters, tunable per category, or bring your own) before any GPU time is spent. Input images and 6 sampled output frames pass **Amazon Rekognition** moderation; flagged renders go to `quarantine/` with no download URL (`BLOCKED`). |
 | **Provenance** | Each output gets a manifest: input SHA-256s, backend, model files, seed, steps, ComfyUI commit, worker instance, guardrail and moderation results, output SHA-256. The mp4 carries `ai_generated=true` metadata and the license notice where one is required. |
+| **Chargeback** | Every job records its GPU seconds, the live price of the instance it ran on, and its USD cost. `cost_report` totals it per label for showback or chargeback; the fleet total shows boot and idle overhead separately. |
 | **Cost control** | Spot first across GPU types and AZs (on-demand switch is one tool call), one GPU per outstanding job up to `maxInstances`, workers remove themselves after `idleMinutes` with an empty queue, per-caller daily job cap, global queue cap. |
 | **Reliability** | SQS lease heartbeats while rendering; a spot interruption notice hands the job straight back; crashed jobs retry 3 times, then dead-letter (alarmed). A 2-minute reconciler guarantees queued work always has a GPU coming. Idempotency keys make agent retries safe. |
 | **Data protection** | Customer managed KMS key (rotation on) for the bucket, table, queues and topic; TLS-only bucket with public access blocked; encrypted EBS; IMDSv2; lifecycle expiry for inputs (7 d), outputs (30 d) and job records (90 d). |
@@ -48,6 +49,7 @@ limits. See [Adding a backend](THIRD_PARTY_MODELS.md#adding-a-backend).
 | `list_jobs` | Your recent jobs, newest first, optional status filter. |
 | `cancel_job` | Cancel queued or running work (a running render is interrupted on the GPU). |
 | `gpu_capacity` | `status`, `warm` (skip the cold start), `release` (scale to zero), `use_on_demand` / `use_spot`. |
+| `cost_report` | Chargeback: exact GPU cost per job (time on the GPU x the live spot or on-demand price), USD per second of video, grouped by backend or by any job label (`project`, `cost_center`), plus the fleet's total instance-hours including boot and idle. |
 
 ## Deploy
 
@@ -164,12 +166,13 @@ top closed models (Veo 3.1, Kling 4.0) for quality.
 ```
 bin/app.ts, lib/open-media-mcp-stack.ts   CDK stack (everything, incl. AgentCore Gateway + target + interceptor)
 tools.json                                 MCP tool schemas (the Gateway target's inline schema)
-lambda/tools/                              the 7 tools + per-backend limits (backends.json)
+lambda/tools/                              the 8 tools + per-backend limits (backends.json)
 lambda/interceptor/                        Gateway REQUEST interceptor: verified caller identity
 worker/setup.sh                            per-boot bootstrap: uv venv, torch, ComfyUI, weights, systemd
 worker/worker.py                           SQS loop, media prep, ComfyUI, moderation, provenance, S3, events
 worker/backends/                           wan22.py, h3.py (add yours here)
 examples/mcp_client.py                     SigV4 MCP client + end-to-end smoke test
+examples/batch.py                          submit a JSON list of jobs, wait, download, write results + cost
 docs/architecture.html                     the diagram above
 ```
 

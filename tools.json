@@ -255,5 +255,22 @@
         }
       }
     }
+  },
+  {
+    "name": "cost_report",
+    "description": "Chargeback for your jobs: exact GPU cost per job (time on the GPU x the live spot or on-demand price), totals and USD per second of video, grouped by backend or by one of your job labels (e.g. project or cost_center). Also reports the fleet's total instance-hours, which include boot and idle time.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "integer",
+          "description": "Look-back window, 1-90 days. Default 7."
+        },
+        "group_by_label": {
+          "type": "string",
+          "description": "A label key you set on generate_video (labels), e.g. project. Default: group by backend."
+        }
+      }
+    }
   }
 ]

@@ -47,7 +47,7 @@
 <body>
 <div class="wrap">
   <h1><span class="m">open-media-mcp</span> · AWS Architecture</h1>
-  <p class="sub">Any MCP agent generates video with open-weight models through seven tools on an Amazon Bedrock
+  <p class="sub">Any MCP agent generates video with open-weight models through eight tools on an Amazon Bedrock
     AgentCore Gateway. Jobs queue in SQS and render on a spot GPU in your account that exists only while there is work.</p>
 
   <div class="layout">
@@ -105,6 +105,7 @@
         <div class="tool"><b>get_job</b><span>Status, timings, presigned mp4 / poster / manifest URLs.</span></div>
         <div class="tool"><b>list_jobs</b> · <b>cancel_job</b><span>Your recent jobs; stop queued or running work.</span></div>
         <div class="tool"><b>gpu_capacity</b><span><code>status</code>, <code>warm</code>, <code>release</code>, <code>use_on_demand</code>, <code>use_spot</code>.</span></div>
+        <div class="tool"><b>cost_report</b><span>Per-job GPU cost and totals by label (<code>project</code>, <code>cost_center</code>) for chargeback.</span></div>
       </div>
 
       <div class="grp req" style="color:#1d6291">Backends</div>
@@ -229,7 +230,7 @@
 
       <image href="./assets/aws/lambda.png" x="531" y="301" width="58" height="58"/>
       <text class="ilab" x="560" y="378" text-anchor="middle">Tools Lambda</text>
-      <text class="ilab2" x="560" y="393" text-anchor="middle">7 MCP tools</text>
+      <text class="ilab2" x="560" y="393" text-anchor="middle">8 MCP tools</text>
 
       <image href="./assets/aws/dynamodb.png" x="691" y="301" width="58" height="58"/>
       <text class="ilab" x="720" y="378" text-anchor="middle">DynamoDB · jobs</text>

@@ -30,6 +30,12 @@
 
     "//safety": "guardrail = create (default Bedrock Guardrail on prompts) | none | <guardrail-id>:<version> (bring your own). outputModeration samples frames through Amazon Rekognition and quarantines flagged renders.",
     "media:guardrail": "create",
+    "//guardrailStrengths": "Per filter: NONE, LOW, MEDIUM, HIGH. HIGH also blocks low-confidence hits, which flags ordinary food copy ('glossy sauce drips... a hand reaches in' was SEXUAL:LOW). MEDIUM still blocks graphic violence.",
+    "media:guardrailSexual": "MEDIUM",
+    "media:guardrailHate": "MEDIUM",
+    "media:guardrailViolence": "MEDIUM",
+    "media:guardrailInsults": "MEDIUM",
+    "media:guardrailMisconduct": "MEDIUM",
     "media:outputModeration": true,
     "media:moderationMinConfidence": 80,
     "media:blockedLabels": "Explicit,Violence,Visually Disturbing,Hate Symbols",
