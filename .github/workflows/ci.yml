@@ -20,7 +20,9 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit -p .
       - name: cdk synth (no AWS account needed; AZs given as context)
-        run: npx cdk synth -q -c 'availability-zones:account=111111111111:region=us-east-1=["us-east-1a","us-east-1b","us-east-1c"]'
+        run: |
+          echo '{"availability-zones:account=111111111111:region=us-east-1":["us-east-1a","us-east-1b","us-east-1c"]}' > cdk.context.json
+          npx cdk synth -q
         env:
           CDK_DEFAULT_ACCOUNT: "111111111111"
           CDK_DEFAULT_REGION: us-east-1
