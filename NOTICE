@@ -1,0 +1,11 @@
+open-media-mcp
+Copyright 2026 open-media-mcp contributors
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+This repository contains infrastructure and client code only. It does not include or redistribute any model
+weights. The GPU worker downloads weights from Hugging Face at deploy time, under each model's own license.
+See THIRD_PARTY_MODELS.md before enabling a backend.
+
+ComfyUI (https://github.com/comfyanonymous/ComfyUI, GPL-3.0) is cloned onto the worker at boot and run as a
+separate process; it is not distributed with or linked into this code.

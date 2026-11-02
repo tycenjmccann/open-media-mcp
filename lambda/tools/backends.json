@@ -1,0 +1,83 @@
+{
+  "wan2.2": {
+    "title": "Wan 2.2 A14B (Wan-AI)",
+    "license": "Apache-2.0",
+    "notice": "",
+    "output": "720p mp4, 16 fps, silent (a soundtrack is muxed on, not lip-synced)",
+    "aspects": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:5"
+    ],
+    "seconds": [
+      2,
+      8
+    ],
+    "default_seconds": 5,
+    "qualities": [
+      "full",
+      "draft8",
+      "draft4"
+    ],
+    "models": [
+      "default"
+    ],
+    "limits": {
+      "refs": 0,
+      "ref_videos": 0,
+      "ref_audios": 0,
+      "keyframes": 0
+    },
+    "first_frame": true,
+    "last_frame": "needs first_frame",
+    "soundtrack": "muxed onto the silent render",
+    "render_estimate": {
+      "full": 82.6,
+      "draft8": 19.0,
+      "draft4": 9.8,
+      "exponent": 1.3
+    }
+  },
+  "h3": {
+    "title": "MiniMax-H3 (Singularity v1.3 fine-tune by default)",
+    "license": "MiniMax H3 Community License: not licensed in the US, EU, UK or Republic of Korea without MiniMax's written license; companies over USD 20M yearly revenue need written authorization",
+    "notice": "Powered by MiniMax H3",
+    "output": "768p mp4, 24 fps, stereo audio generated with the picture",
+    "aspects": [
+      "9:16",
+      "16:9",
+      "1:1",
+      "4:5"
+    ],
+    "seconds": [
+      5,
+      15
+    ],
+    "default_seconds": 5,
+    "qualities": [
+      "full",
+      "draft8",
+      "draft4"
+    ],
+    "models": [
+      "singularity",
+      "ref2va"
+    ],
+    "limits": {
+      "refs": 9,
+      "ref_videos": 3,
+      "ref_audios": 3,
+      "keyframes": 8
+    },
+    "first_frame": true,
+    "last_frame": true,
+    "soundtrack": "anchored on the timeline; on-camera singing and speech lip-sync to it",
+    "render_estimate": {
+      "full": 13.7,
+      "draft8": 6.0,
+      "draft4": 4.5,
+      "exponent": 1.6
+    }
+  }
+}

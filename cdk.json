@@ -1,0 +1,53 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "watch": { "include": ["**"], "exclude": ["README.md", "cdk*.json", "**/*.d.ts", "**/*.js", "tsconfig.json", "package*.json", "node_modules", "worker", "tests"] },
+  "context": {
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
+    "@aws-cdk/aws-ec2:restrictDefaultSecurityGroup": true,
+
+    "//backends": "Comma list of model backends the worker loads: wan2.2 (Apache-2.0, default), h3 (MiniMax H3 Community License: you need a license from MiniMax in the US, EU, UK and Republic of Korea; read THIRD_PARTY_MODELS.md).",
+    "media:backends": "wan2.2",
+
+    "//auth": "iam = SigV4 callers (AWS_IAM). jwt = your IdP (Cognito, Okta, Entra ID) via media:jwtDiscoveryUrl + media:jwtAllowedClients or media:jwtAllowedAudience. There is no unauthenticated mode.",
+    "media:auth": "iam",
+    "media:jwtDiscoveryUrl": "",
+    "media:jwtAllowedClients": "",
+    "media:jwtAllowedAudience": "",
+    "media:tenantClaim": "sub",
+
+    "//gpu": "Spot first by priority order; onDemand=true switches the purchase option. maxInstances caps horizontal fan-out (one job per GPU at a time).",
+    "media:instanceTypes": "g7e.4xlarge,g7e.2xlarge,g6e.4xlarge",
+    "media:maxInstances": 1,
+    "media:onDemand": false,
+    "media:idleMinutes": 20,
+
+    "//network": "Default = new VPC, public subnets, no inbound rules. privateNetworking=true adds private subnets + one NAT gateway. Or bring your own: vpcId + subnetIds (must have egress).",
+    "media:privateNetworking": false,
+    "media:vpcId": "",
+    "media:subnetIds": "",
+
+    "//safety": "guardrail = create (default Bedrock Guardrail on prompts) | none | <guardrail-id>:<version> (bring your own). outputModeration samples frames through Amazon Rekognition and quarantines flagged renders.",
+    "media:guardrail": "create",
+    "media:outputModeration": true,
+    "media:moderationMinConfidence": 80,
+    "media:blockedLabels": "Explicit,Violence,Visually Disturbing,Hate Symbols",
+
+    "//data": "kms = customer managed key for bucket, table, queue and topic. Retention in days.",
+    "media:kms": true,
+    "media:retainData": true,
+    "media:inputRetentionDays": 7,
+    "media:outputRetentionDays": 30,
+    "media:jobRetentionDays": 90,
+    "media:presignTtlSec": 3600,
+
+    "//limits": "Per-caller daily job cap (0 = off) and a global queue depth cap.",
+    "media:dailyJobLimitPerCaller": 100,
+    "media:maxQueuedJobs": 50,
+
+    "media:modelCacheBucket": "",
+    "media:hfTokenSecretName": "",
+    "media:alarmEmail": ""
+  }
+}

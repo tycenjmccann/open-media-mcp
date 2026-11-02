@@ -1,0 +1,16 @@
+node_modules/
+cdk.out/
+dist/
+*.js
+!scripts/*.js
+*.d.ts
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+cdk.context.json
+out/
+*.mp4
+!docs/media/*.mp4
+.env*

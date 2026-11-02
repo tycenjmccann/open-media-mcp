@@ -1,0 +1,259 @@
+[
+  {
+    "name": "get_capabilities",
+    "description": "Call this first. Returns what the video model accepts (aspects, length limits, reference and keyframe limits, quality modes), the prompt tag syntax (<Picture N>, <Video N>, <Audio N>), render-time estimates, guardrail settings, and whether a GPU worker is up right now.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "create_upload",
+    "description": "Get a presigned HTTPS PUT URL for one input file (reference image, keyframe, reference video, reference audio, or soundtrack). Upload the bytes with: curl -X PUT -H 'Content-Type: <content_type>' --upload-file <file> '<upload_url>'. Then pass the returned key to generate_video. URLs expire after 15 minutes; uploaded inputs are deleted after the stack's input retention period.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string",
+          "description": "Original file name, used for the extension (e.g. singer.png, song.wav, move.mp4)."
+        },
+        "content_type": {
+          "type": "string",
+          "description": "MIME type sent with the PUT, e.g. image/png, image/jpeg, audio/wav, audio/mpeg, video/mp4."
+        }
+      },
+      "required": [
+        "filename",
+        "content_type"
+      ]
+    }
+  },
+  {
+    "name": "generate_video",
+    "description": "Queue one video generation and return a job_id immediately (renders take minutes; get_capabilities has estimates). Poll get_job until status is SUCCEEDED, FAILED, BLOCKED or CANCELLED. With backend h3 the model makes picture and sound in one pass: put any sung or spoken line in the prompt in quotes, whole. Reference media are tagged in the prompt in upload order: refs -> <Picture 1..n>, then first_frame/keyframes/last_frame continue the <Picture> numbering; ref_videos -> <Video n>; ref_audios -> <Audio n>. On h3 a soundtrack makes the character lip-sync to real audio; on wan2.2 it is muxed onto the silent render.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "description": "Model backend: wan2.2 (default, Apache-2.0, silent 720p video, text or first-frame to video) or h3 (MiniMax-H3: picture + sound in one pass, references, keyframes, lip-sync; only if the operator enabled it). get_capabilities lists what is enabled."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Scene, action, camera and energy in 1-3 sentences. Quote every line that is sung or spoken. Max 4000 characters."
+        },
+        "aspect": {
+          "type": "string",
+          "description": "One of 16:9, 9:16, 1:1, 4:5 (768p tier). Default 16:9."
+        },
+        "seconds": {
+          "type": "number",
+          "description": "Clip length, 5-15 (the trained range). Default 5, or the soundtrack length when one is given. Snapped to the model's frame cadence."
+        },
+        "quality": {
+          "type": "string",
+          "description": "full (default, 20 steps, best lip-sync and detail), draft8 or draft4 (turbo LoRA, 2-4x faster, weaker on wide shots)."
+        },
+        "model": {
+          "type": "string",
+          "description": "singularity (default, the Singularity v1.3 community fine-tune) or ref2va (stock MiniMax-H3 ref2va)."
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Fix for a repeatable take. Random if omitted."
+        },
+        "refs": {
+          "type": "array",
+          "description": "Up to 9 reference images (identity, costume, location). Not pinned to a time. (h3 only)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "Key returned by create_upload."
+              }
+            },
+            "required": [
+              "key"
+            ]
+          }
+        },
+        "ref_videos": {
+          "type": "array",
+          "description": "Up to 3 reference videos (motion or camera move, 2-15 s). Their soundtrack rides along. Note: the model copies the subject of a ref video, not only its motion. (h3 only)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "from": {
+                "type": "number",
+                "description": "Trim start, seconds."
+              },
+              "to": {
+                "type": "number",
+                "description": "Trim end, seconds."
+              }
+            },
+            "required": [
+              "key"
+            ]
+          }
+        },
+        "ref_audios": {
+          "type": "array",
+          "description": "Up to 3 reference audio clips (a voice or music to match). (h3 only)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "from": {
+                "type": "number"
+              },
+              "to": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "key"
+            ]
+          }
+        },
+        "first_frame": {
+          "type": "string",
+          "description": "Upload key of the image pinned as frame 0. A real photoreal start frame is the biggest quality lever."
+        },
+        "last_frame": {
+          "type": "string",
+          "description": "Upload key of the image pinned as the final frame."
+        },
+        "keyframes": {
+          "type": "array",
+          "description": "Images pinned at a time. Keep camera moves to about 3 pins per 7 s, and make the pins agree on the world, or the model hard-cuts between them. (h3 only)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "at": {
+                "type": "number",
+                "description": "Seconds from the start; negative counts from the end."
+              }
+            },
+            "required": [
+              "key",
+              "at"
+            ]
+          }
+        },
+        "soundtrack": {
+          "type": "object",
+          "description": "Audio anchored onto the output; on-camera singing or speech lip-syncs to it.",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "from": {
+              "type": "number",
+              "description": "Trim start in the source file, seconds."
+            },
+            "to": {
+              "type": "number",
+              "description": "Trim end, seconds."
+            },
+            "at": {
+              "type": "number",
+              "description": "Where it starts in the output, seconds. Default 0."
+            },
+            "keep_original": {
+              "type": "boolean",
+              "description": "Replace the model's decoded audio with the original file in the final mp4 (use for songs and VO). Default true."
+            }
+          },
+          "required": [
+            "key"
+          ]
+        },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Any string; retries with the same key return the same job instead of queueing a duplicate."
+        },
+        "labels": {
+          "type": "object",
+          "description": "Free-form string labels stored on the job (project, cost center, shot id)."
+        },
+        "negative_prompt": {
+          "type": "string",
+          "description": "What to avoid (wan2.2). A sensible default is applied."
+        }
+      },
+      "required": [
+        "prompt"
+      ]
+    }
+  },
+  {
+    "name": "get_job",
+    "description": "Status of one job: QUEUED, STARTING, RUNNING, SUCCEEDED, FAILED, BLOCKED (failed a content check) or CANCELLED, plus phase, timings, and on success presigned URLs for the mp4, a poster frame and the provenance manifest (valid for 1 hour by default; call again for fresh URLs).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ]
+    }
+  },
+  {
+    "name": "list_jobs",
+    "description": "Your recent jobs, newest first, with status and prompt preview.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Optional filter: QUEUED, RUNNING, SUCCEEDED, FAILED, BLOCKED or CANCELLED."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "1-50, default 10."
+        }
+      }
+    }
+  },
+  {
+    "name": "cancel_job",
+    "description": "Cancel a queued or running job. A running render is interrupted on the GPU.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ]
+    }
+  },
+  {
+    "name": "gpu_capacity",
+    "description": "See or steer the GPU fleet. status = instances, spot or on-demand, boot phase, queue depth. warm = start one worker now so the next job skips the ~5 min cold start. release = scale to zero when nothing is running. use_on_demand / use_spot = switch the purchase option when spot capacity is short.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "status (default), warm, release, use_on_demand, use_spot."
+        }
+      }
+    }
+  }
+]

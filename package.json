@@ -1,0 +1,25 @@
+{
+  "name": "open-media-mcp",
+  "version": "0.1.0",
+  "description": "Open-weight MiniMax-H3 video + audio generation as MCP tools on Amazon Bedrock AgentCore Gateway, with a scale-to-zero spot GPU worker. CDK v2 (TypeScript).",
+  "license": "Apache-2.0",
+  "private": true,
+  "bin": { "open-media-mcp": "bin/app.js" },
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy",
+    "test": "python3 -m pytest -q tests"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "aws-cdk": "^2.1118.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.275.0",
+    "constructs": "^10.3.0"
+  }
+}

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>open-media-mcp · AWS Architecture</title>
+<style>
+  :root{ --ink:#232f3e; --muted:#5b6b7b; --opt:#8c4fff;
+         --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+         --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
+  html,body{margin:0;background:#fff;color:var(--ink);font-family:var(--sans)}
+  .wrap{max-width:1440px;margin:0 auto;padding:28px 24px 44px}
+  h1{font-size:22px;margin:0 0 2px;letter-spacing:-.3px}
+  h1 .m{font-family:var(--mono);color:#8c4fff}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 18px;max-width:980px;line-height:1.5}
+  .layout{display:flex;gap:30px;align-items:flex-start}
+  .side{width:350px;flex:none}
+  .diagram{flex:1;min-width:0}
+  svg{width:100%;height:auto;display:block;border:1px solid #e6e9ee;border-radius:10px;background:#fff}
+  .key{display:flex;flex-direction:column;gap:7px;margin:0 0 18px;padding-bottom:16px;border-bottom:1px solid #eceff2}
+  .key .r{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+  .key .r b{color:var(--ink)}
+  .key svg{border:0;width:34px;height:10px;flex:none}
+  .grp{font-size:11px;text-transform:uppercase;letter-spacing:.7px;font-weight:700;margin:18px 0 10px}
+  .grp.req{color:#c4661a} .grp.opt{color:var(--opt)}
+  .sec{margin-bottom:13px}
+  .sec .h{display:flex;gap:9px;align-items:center;font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:5px}
+  .sec .h .n{flex:none;width:21px;height:21px;border-radius:50%;color:#fff;font-size:11px;font-weight:700;
+    text-align:center;line-height:21px;font-family:var(--mono)}
+  .sec.req .h .n{background:#ec7211} .sec.opt .h .n{background:var(--opt)}
+  .sec ul{margin:0;padding-left:32px;list-style:none}
+  .sec li{font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:4px;position:relative}
+  .sec li::before{content:"–";position:absolute;left:-14px;color:#b9c1cb}
+  .sec li code,.tool span code{font-family:var(--mono);font-size:11px;color:var(--ink)}
+  .sec li b{color:var(--ink)}
+  .tools{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+  .tool{font-size:12.5px;line-height:1.4}
+  .tool b{display:block;font-family:var(--mono);font-size:12px;color:#1d6291}
+  .tool span{color:var(--muted)}
+  .models{font-size:12.5px;line-height:1.5;color:var(--muted)}
+  .models b{color:var(--ink);font-family:var(--mono);font-size:12px}
+  .cost{margin-top:14px;padding:12px 13px;border:1px solid #f0d9a8;border-radius:9px;
+    background:#fffaf0;font-size:12.5px;line-height:1.5;color:#7a5a16}
+  .cost b{color:#b3741e}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="m">open-media-mcp</span> · AWS Architecture</h1>
+  <p class="sub">Any MCP agent generates video with open-weight models through seven tools on an Amazon Bedrock
+    AgentCore Gateway. Jobs queue in SQS and render on a spot GPU in your account that exists only while there is work.</p>
+
+  <div class="layout">
+    <aside class="side">
+      <div class="key">
+        <div class="r"><svg viewBox="0 0 34 10"><path d="M0,5 H30" stroke="#ec7211" stroke-width="2.4"/><path d="M28,2 L34,5 L28,8 z" fill="#ec7211"/></svg><span><b>Required</b> job loop (calls + media)</span></div>
+        <div class="r"><svg viewBox="0 0 34 10"><path d="M0,5 H30" stroke="#8c4fff" stroke-width="2" stroke-dasharray="5 3"/><path d="M28,2 L34,5 L28,8 z" fill="#8c4fff"/></svg><span><b style="color:#7a48cc">Optional</b> add-ons</span></div>
+      </div>
+
+      <div class="grp req">How it works</div>
+      <div class="sec req">
+        <div class="h"><span class="n">1</span> Agent calls a tool</div>
+        <ul><li>The agent signs the MCP call (<b>SigV4</b> or a <b>JWT</b>) to the <b>AgentCore Gateway</b>: <code>create_upload</code> for inputs, then <code>generate_video</code> with a prompt, backend, aspect and length.</li></ul>
+      </div>
+      <div class="sec req">
+        <div class="h"><span class="n">2</span> Interceptor stamps the caller</div>
+        <ul><li>A REQUEST <b>interceptor Lambda</b> writes the verified <code>tenant</code> and <code>principal</code> into the call, replacing anything the client sent.</li></ul>
+      </div>
+      <div class="sec req">
+        <div class="h"><span class="n">3</span> Tools Lambda admits the job</div>
+        <ul><li>Screens the prompt with a <b>Bedrock Guardrail</b>, checks the caller's quota, writes the job to <b>DynamoDB</b>, sends it to <b>SQS</b>, and raises the <b>Auto Scaling group</b> to one GPU per outstanding job. Returns <code>job_id</code> + <code>eta_s</code>.</li></ul>
+      </div>
+      <div class="sec req">
+        <div class="h"><span class="n">4</span> A spot GPU pulls the job</div>
+        <ul><li>The <b>g7e worker</b> boots with weights from <b>S3</b> (Hugging Face on the very first boot), long-polls SQS, and extends its lease while it renders.</li></ul>
+      </div>
+      <div class="sec req">
+        <div class="h"><span class="n">5</span> Render, check, publish</div>
+        <ul><li><b>ComfyUI</b> renders the backend's graph; <b>Rekognition</b> checks 6 frames; the mp4, poster and provenance manifest go to <b>S3</b> and the status to DynamoDB. Flagged renders go to <code>quarantine/</code>.</li></ul>
+      </div>
+      <div class="sec req">
+        <div class="h"><span class="n">6</span> Agent polls and downloads</div>
+        <ul><li><code>get_job</code> returns the status and presigned <code>video_url</code>, <code>poster_url</code> and <code>manifest_url</code>; media moves agent ⇄ S3 directly, never through the gateway. Idle workers remove themselves.</li></ul>
+      </div>
+
+      <div class="grp opt">Add-ons (optional)</div>
+      <div class="sec opt">
+        <div class="h"><span class="n">A</span> Your identity provider</div>
+        <ul><li><code>media:auth=jwt</code>: Cognito, Okta or Entra ID tokens instead of SigV4; the tenant comes from a claim.</li></ul>
+      </div>
+      <div class="sec opt">
+        <div class="h"><span class="n">B</span> Private networking</div>
+        <ul><li>Private subnets behind a NAT, or your own VPC and subnets. S3 and DynamoDB gateway endpoints are always on.</li></ul>
+      </div>
+      <div class="sec opt">
+        <div class="h"><span class="n">C</span> Events into your workflows</div>
+        <ul><li>Every status change is an <b>EventBridge</b> event (<code>Media Job Status Changed</code>) for Step Functions, Slack or review queues.</li></ul>
+      </div>
+
+      <div class="grp req" style="color:#1d6291">The MCP tools</div>
+      <div class="tools">
+        <div class="tool"><b>get_capabilities</b><span>Backends, limits, prompt tags, render estimates, live GPU state.</span></div>
+        <div class="tool"><b>create_upload</b><span>Presigned PUT URL + <code>key</code> for an input file.</span></div>
+        <div class="tool"><b>generate_video</b><span>Queue a render; returns <code>job_id</code>, <code>eta_s</code>.</span></div>
+        <div class="tool"><b>get_job</b><span>Status, timings, presigned mp4 / poster / manifest URLs.</span></div>
+        <div class="tool"><b>list_jobs</b> · <b>cancel_job</b><span>Your recent jobs; stop queued or running work.</span></div>
+        <div class="tool"><b>gpu_capacity</b><span><code>status</code>, <code>warm</code>, <code>release</code>, <code>use_on_demand</code>, <code>use_spot</code>.</span></div>
+      </div>
+
+      <div class="grp req" style="color:#1d6291">Backends</div>
+      <div class="models"><b>wan2.2</b> (default) Apache-2.0, 720p silent T2V / I2V.<br><b>h3</b> (opt-in) picture + sound, lip-sync, refs; MiniMax H3 license excludes the US, EU, UK and KR.</div>
+
+      <div class="cost"><b>Cost:</b> the GPU bills only while a worker exists (spot g7e.4xlarge ≈ USD 1.3-2/h). Idle cost is the KMS key and the S3 weight cache, about USD 3/month.</div>
+    </aside>
+
+    <div class="diagram">
+    <svg viewBox="0 0 1000 1130" role="img" aria-label="open-media-mcp AWS architecture">
+      <defs>
+        <marker id="ar" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L9,5 L0,10 z" fill="#ec7211"/></marker>
+        <marker id="arR" markerWidth="10" markerHeight="10" refX="1.5" refY="5" orient="auto"><path d="M9,0 L0,5 L9,10 z" fill="#ec7211"/></marker>
+        <marker id="ao" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L9,5 L0,10 z" fill="#8c4fff"/></marker>
+        <marker id="aoR" markerWidth="10" markerHeight="10" refX="1.5" refY="5" orient="auto"><path d="M9,0 L0,5 L9,10 z" fill="#8c4fff"/></marker>
+        <style>
+          .flow{stroke:#ec7211;stroke-width:2.2;fill:none}
+          .data{stroke:#ec7211;stroke-width:1.7;fill:none}
+          .opt{stroke:#8c4fff;stroke-width:1.5;fill:none;stroke-dasharray:6 4}
+          .glab{font-size:13px;font-weight:700}
+          .ilab{font-size:12.5px;fill:#232f3e;font-weight:600}
+          .ilab2{font-size:11px;fill:#5b6b7b}
+          .cap{font-size:10px;fill:#9a4f00;font-family:ui-monospace,Menlo,monospace}
+          .num{font-size:12px;font-weight:700;fill:#fff;font-family:ui-monospace,monospace}
+          .opttag{font-size:9.5px;font-weight:700;fill:#8c4fff;font-family:ui-monospace,monospace;letter-spacing:.4px}
+          .ilab,.ilab2,.glab,.cap{paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}
+        </style>
+      </defs>
+
+      <!-- ============ EXTERNAL: agent (top), IdP (left, optional), Hugging Face (bottom) ============ -->
+      <rect x="250" y="12" width="250" height="108" rx="9" fill="#fbfbfc" stroke="#c4ccd6" stroke-width="1.4"/>
+      <image href="./assets/aws/users.png" x="262" y="30" width="54" height="54"/>
+      <text class="ilab" x="328" y="50">MCP agent</text>
+      <text class="ilab2" x="328" y="66">Claude Code · Kiro · Strands</text>
+      <text class="ilab2" x="328" y="81">or an AgentCore Runtime agent</text>
+
+      <rect x="14" y="262" width="158" height="136" rx="9" fill="rgba(140,79,255,.04)" stroke="#8c4fff" stroke-width="1.5" stroke-dasharray="8 5"/>
+      <image href="./assets/aws/iam.png" x="69" y="276" width="48" height="48"/>
+      <text class="ilab" x="93" y="344" text-anchor="middle">Your IdP</text>
+      <text class="ilab2" x="93" y="360" text-anchor="middle">Cognito · Okta · Entra ID</text>
+      <text class="opttag" x="93" y="382" text-anchor="middle">OPTIONAL</text>
+
+      <rect x="470" y="1052" width="180" height="62" rx="9" fill="#fbfbfc" stroke="#c4ccd6" stroke-width="1.4"/>
+      <text class="ilab" x="560" y="1078" text-anchor="middle">Hugging Face</text>
+      <text class="ilab2" x="560" y="1095" text-anchor="middle">weights, first boot only</text>
+
+      <!-- ============ CONTAINERS ============ -->
+      <rect x="190" y="142" width="790" height="890" rx="10" fill="none" stroke="#232f3e" stroke-width="2"/>
+      <rect x="204" y="154" width="26" height="26" rx="5" fill="#232f3e"/>
+      <text x="217" y="172" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="ui-monospace,monospace">aws</text>
+      <text class="glab" x="240" y="172" fill="#232f3e">AWS Cloud</text>
+      <rect x="206" y="190" width="758" height="826" rx="8" fill="none" stroke="#00a4a6" stroke-width="1.4" stroke-dasharray="7 5"/>
+      <text class="glab" x="222" y="211" fill="#147c8b" font-size="12.5">Region · us-east-1</text>
+
+      <!-- VPC (labels at the bottom so the job spine and status line stay clear) -->
+      <rect x="450" y="590" width="364" height="352" rx="9" fill="rgba(0,164,166,.03)" stroke="#147c8b" stroke-width="1.4" stroke-dasharray="8 5"/>
+      <image href="./assets/aws/vpc.png" x="664" y="914" width="22" height="22"/>
+      <text class="glab" x="692" y="931" fill="#147c8b">VPC · no ingress</text>
+      <rect x="462" y="606" width="338" height="300" rx="7" fill="#eaf5f7" stroke="#00a4a6" stroke-width="1.5"/>
+      <text class="glab" x="474" y="626" fill="#147c8b" font-size="12px">Public subnet</text>
+      <text class="opttag" x="790" y="899" text-anchor="end">B · OR PRIVATE + NAT</text>
+      <rect x="476" y="656" width="306" height="232" rx="7" fill="#fff" stroke="#e07b00" stroke-width="1.3" stroke-dasharray="5 4"/>
+      <image href="./assets/aws/auto-scaling.png" x="486" y="664" width="24" height="24"/>
+      <text class="ilab" x="516" y="681">Auto Scaling group</text>
+      <text class="ilab2" x="516" y="696">spot first · 0 to N GPUs</text>
+
+      <!-- ============ ARROWS ============ -->
+      <!-- 1 agent -> gateway, 6 result back -->
+      <path class="flow" d="M388,120 V296" marker-end="url(#ar)"/>
+      <circle cx="388" cy="252" r="10" fill="#ec7211"/><text class="num" x="388" y="256" text-anchor="middle">1</text>
+      <path class="flow" d="M412,296 V120" marker-end="url(#ar)"/>
+      <circle cx="412" cy="226" r="10" fill="#ec7211"/><text class="num" x="412" y="230" text-anchor="middle">6</text>
+
+      <!-- agent <-> S3: presigned transfers, never through the gateway -->
+      <path class="data" d="M500,60 H880 V724" marker-start="url(#arR)" marker-end="url(#ar)"/>
+      <text class="cap" x="690" y="52" text-anchor="middle">presigned PUT inputs · GET outputs</text>
+
+      <!-- A gateway <-> IdP -->
+      <path class="opt" d="M369,330 H176" marker-start="url(#aoR)" marker-end="url(#ao)"/>
+      <circle cx="270" cy="330" r="10" fill="#8c4fff"/><text class="num" x="270" y="334" text-anchor="middle">A</text>
+
+      <!-- 2 gateway <-> interceptor -->
+      <path class="flow" d="M400,404 V450" marker-start="url(#arR)" marker-end="url(#ar)"/>
+      <circle cx="400" cy="427" r="10" fill="#ec7211"/><text class="num" x="400" y="431" text-anchor="middle">2</text>
+
+      <!-- 3 gateway <-> tools, tools <-> guardrail, tools <-> dynamodb -->
+      <path class="flow" d="M432,330 H528" marker-start="url(#arR)" marker-end="url(#ar)"/>
+      <circle cx="480" cy="330" r="10" fill="#ec7211"/><text class="num" x="480" y="334" text-anchor="middle">3</text>
+      <path class="flow" d="M560,298 V256" marker-start="url(#arR)" marker-end="url(#ar)"/>
+      <path class="data" d="M592,330 H688" marker-start="url(#arR)" marker-end="url(#ar)"/>
+
+      <!-- tools -> sqs spine, tee right to the Auto Scaling group -->
+      <path class="flow" d="M560,404 V450" marker-end="url(#ar)"/>
+      <path class="flow" d="M560,426 H642 V654" marker-end="url(#ar)"/>
+      <text class="cap" x="655" y="512" text-anchor="middle" transform="rotate(90 655 512)">set desired capacity</text>
+
+      <!-- 4 sqs -> worker -->
+      <path class="flow" d="M560,512 V722" marker-end="url(#ar)"/>
+      <circle cx="560" cy="560" r="10" fill="#ec7211"/><text class="num" x="560" y="564" text-anchor="middle">4</text>
+
+      <!-- 5 worker -> S3 (media) with a tee up to DynamoDB (status) -->
+      <path class="data" d="M592,755 H849" marker-end="url(#ar)"/>
+      <path class="data" d="M720,755 V404" marker-end="url(#ar)"/>
+      <circle cx="790" cy="755" r="10" fill="#ec7211"/><text class="num" x="790" y="759" text-anchor="middle">5</text>
+
+      <!-- worker <-> rekognition, tee down to EventBridge (C) -->
+      <path class="data" d="M528,755 H322" marker-start="url(#arR)" marker-end="url(#ar)"/>
+      <path class="opt" d="M424,755 V930" marker-end="url(#ao)"/>
+      <circle cx="424" cy="860" r="10" fill="#8c4fff"/><text class="num" x="424" y="864" text-anchor="middle">C</text>
+
+      <!-- hugging face -> worker (first boot) -->
+      <path class="data" d="M560,1052 V830" marker-end="url(#ar)"/>
+
+      <!-- ============ ICONS ============ -->
+      <image href="./assets/aws/bedrock.png" x="371" y="301" width="58" height="58"/>
+      <text class="ilab" x="400" y="378" text-anchor="middle">AgentCore Gateway</text>
+      <text class="ilab2" x="400" y="393" text-anchor="middle">AWS_IAM or JWT · MCP</text>
+
+      <image href="./assets/aws/bedrock.png" x="537" y="208" width="46" height="46"/>
+      <text class="ilab" x="592" y="228">Bedrock Guardrail</text>
+      <text class="ilab2" x="592" y="243">prompt screen</text>
+
+      <image href="./assets/aws/lambda.png" x="531" y="301" width="58" height="58"/>
+      <text class="ilab" x="560" y="378" text-anchor="middle">Tools Lambda</text>
+      <text class="ilab2" x="560" y="393" text-anchor="middle">7 MCP tools</text>
+
+      <image href="./assets/aws/dynamodb.png" x="691" y="301" width="58" height="58"/>
+      <text class="ilab" x="720" y="378" text-anchor="middle">DynamoDB · jobs</text>
+      <text class="ilab2" x="720" y="393" text-anchor="middle">status · audit · quotas</text>
+
+      <image href="./assets/aws/lambda.png" x="371" y="452" width="58" height="58"/>
+      <text class="ilab" x="400" y="528" text-anchor="middle">Interceptor Lambda</text>
+      <text class="ilab2" x="400" y="543" text-anchor="middle">verified caller</text>
+
+      <image href="./assets/aws/sqs.png" x="531" y="452" width="58" height="58"/>
+      <text class="ilab" x="524" y="476" text-anchor="end">SQS jobs</text>
+      <text class="ilab2" x="524" y="491" text-anchor="end">+ dead-letter</text>
+
+      <image href="./assets/aws/s3.png" x="851" y="726" width="58" height="58"/>
+      <text class="ilab" x="880" y="804" text-anchor="middle">S3 · media</text>
+      <text class="ilab2" x="880" y="819" text-anchor="middle">inputs · outputs</text>
+      <text class="ilab2" x="880" y="833" text-anchor="middle">weights cache</text>
+
+      <image href="./assets/aws/ec2.png" x="531" y="726" width="58" height="58"/>
+      <text class="ilab" x="560" y="804" text-anchor="middle">GPU worker</text>
+      <text class="ilab2" x="560" y="819" text-anchor="middle">g7e · ComfyUI · worker.py</text>
+
+      <image href="./assets/aws/kms.png" x="267" y="588" width="46" height="46"/>
+      <text class="ilab" x="290" y="650" text-anchor="middle">KMS key</text>
+      <text class="ilab2" x="290" y="665" text-anchor="middle">encrypts data at rest</text>
+
+      <image href="./assets/aws/rekognition.png" x="261" y="726" width="58" height="58"/>
+      <text class="ilab" x="290" y="804" text-anchor="middle">Rekognition</text>
+      <text class="ilab2" x="290" y="819" text-anchor="middle">frame moderation</text>
+
+      <image href="./assets/aws/cloudwatch.png" x="267" y="900" width="46" height="46"/>
+      <text class="ilab" x="290" y="962" text-anchor="middle">CloudWatch</text>
+      <text class="ilab2" x="290" y="977" text-anchor="middle">logs · metrics · alarms</text>
+
+      <image href="./assets/aws/eventbridge.png" x="401" y="932" width="46" height="46"/>
+      <text class="ilab" x="424" y="994" text-anchor="middle">EventBridge</text>
+      <text class="ilab2" x="424" y="1008" text-anchor="middle">job events</text>
+    </svg>
+    </div>
+  </div>
+</div>
+</body>
+</html>
