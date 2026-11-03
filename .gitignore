@@ -14,3 +14,4 @@ out/
 *.mp4
 !docs/media/*.mp4
 .env*
+cdk.local.json

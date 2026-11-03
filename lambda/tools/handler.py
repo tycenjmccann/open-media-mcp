@@ -39,7 +39,7 @@ with open(os.path.join(os.path.dirname(__file__), "backends.json")) as fh:
     ALL_BACKENDS = json.load(fh)
 ENABLED = [b for b in E.get("MEDIA_BACKENDS", "wan2.2").split(",") if b]
 BACKENDS = {k: v for k, v in ALL_BACKENDS.items() if k in ENABLED}
-DEFAULT_BACKEND = ENABLED[0]
+DEFAULT_BACKEND = next((b for b in ENABLED if ALL_BACKENDS.get(b, {}).get("kind", "video") == "video"), ENABLED[0])
 FINAL = {"SUCCEEDED", "FAILED", "BLOCKED", "CANCELLED"}
 ACTIVE = {"QUEUED", "STARTING", "RUNNING"}
 UPLOAD_TYPES = {
@@ -117,8 +117,10 @@ def ready_workers(f):
     return sum(1 for w in f["workers"] if str(w.get("phase", "")).startswith(("ready", "rendering", "preparing")))
 
 
-def estimate(backend, seconds, quality):
+def estimate(backend, seconds, quality=None):
     r = BACKENDS[backend]["render_estimate"]
+    if "per_second" in r:
+        return int(r["fixed"] + r["per_second"] * seconds)
     return int(r[quality] * seconds ** r["exponent"])
 
 
@@ -127,7 +129,7 @@ def get_capabilities(args, caller):
     f = fleet()
     return {
         "backends": {k: {kk: vv for kk, vv in v.items() if kk != "render_estimate"} |
-                     {"render_estimate_s": {q: estimate(k, v["default_seconds"], q) for q in v["qualities"]}}
+                     {"render_estimate_s": {q: estimate(k, v["default_seconds"], q) for q in v.get("qualities", ["full"])}}
                      for k, v in BACKENDS.items()},
         "default_backend": DEFAULT_BACKEND,
         "prompt_tags": "Reference media are tagged in the prompt by upload order: refs -> <Picture 1..n>; first_frame, "
@@ -191,8 +193,9 @@ def _window(item, caller, what):
 
 def normalize(args, caller):
     backend = args.get("backend") or DEFAULT_BACKEND
-    if backend not in BACKENDS:
-        raise ToolError(f"backend must be one of {list(BACKENDS)}")
+    videos = [k for k, v in BACKENDS.items() if v.get("kind", "video") == "video"]
+    if backend not in videos:
+        raise ToolError(f"backend must be one of {videos} (use generate_audio for audio backends)")
     b = BACKENDS[backend]
     prompt = str(args.get("prompt") or "").strip()
     if not prompt or len(prompt) > 4000:
@@ -277,7 +280,37 @@ def take_quota(tenant):
 
 
 def generate_video(args, caller):
-    spec = normalize(args, caller)
+    return submit(normalize(args, caller), args, caller)
+
+
+def normalize_audio(args, caller):
+    audios = [k for k, v in BACKENDS.items() if v.get("kind") == "audio"]
+    if not audios:
+        raise ToolError("no audio backend is enabled on this stack (media:backends)")
+    backend = args.get("backend") or audios[0]
+    if backend not in audios:
+        raise ToolError(f"backend must be one of {audios}")
+    b = BACKENDS[backend]
+    prompt = str(args.get("prompt") or "").strip()
+    if not prompt or len(prompt) > 4000:
+        raise ToolError("prompt is required (max 4000 characters)")
+    model = args.get("model") or b["models"][0]
+    if model not in b["models"]:
+        raise ToolError(f"model must be one of {b['models']}")
+    lo, hi = b["seconds"]
+    seconds = _num(args, "seconds", lo, hi) or b["default_seconds"]
+    spec = {"backend": backend, "kind": "audio", "prompt": prompt, "model": model, "seconds": round(seconds, 2),
+            "quality": "full", "seed": int(args["seed"]) if args.get("seed") is not None else random.randint(1, 2**31 - 1)}
+    if args.get("negative_prompt"):
+        spec["negative_prompt"] = str(args["negative_prompt"])[:2000]
+    return spec
+
+
+def generate_audio(args, caller):
+    return submit(normalize_audio(args, caller), args, caller)
+
+
+def submit(spec, args, caller):
     tenant = caller["tenant"]
     idem = args.get("idempotency_key")
     job_id = ("j-" + hashlib.sha256(f"{tenant}|{idem}".encode()).hexdigest()[:24]) if idem else \
@@ -330,7 +363,7 @@ def generate_video(args, caller):
     print(json.dumps({"event": "job_queued", "job_id": job_id, "tenant": tenant, "backend": spec["backend"],
                       "seconds": spec["seconds"], "quality": spec["quality"]}))
     out = {"job_id": job_id, "status": "QUEUED", "backend": spec["backend"], "seconds": spec["seconds"],
-           "aspect": spec["aspect"], "quality": spec["quality"], "seed": spec["seed"], "eta_s": int(eta),
+           "aspect": spec.get("aspect"), "model": spec.get("model"), "quality": spec["quality"], "seed": spec["seed"], "eta_s": int(eta),
            "gpu": "ready" if warm else "starting (cold start about 5 min)", "poll": "get_job every 30-60 s"}
     if BACKENDS[spec["backend"]]["notice"]:
         out["notice"] = BACKENDS[spec["backend"]]["notice"]
@@ -356,13 +389,18 @@ def get_job(args, caller):
     out = {k: item.get(k) for k in ("job_id", "status", "phase", "backend", "created_at", "started_at",
                                     "render_started_at", "finished_at", "attempt", "error", "timings", "labels",
                                     "moderation", "quarantine_key", "cost") if item.get(k) is not None}
-    out["request"] = {k: spec.get(k) for k in ("aspect", "seconds", "quality", "model", "seed") if spec.get(k) is not None}
+    out["request"] = {k: spec.get(k) for k in ("kind", "aspect", "seconds", "quality", "model", "seed") if spec.get(k) is not None}
     if item["status"] == "SUCCEEDED":
         o = item["output"]
-        out["output"] = {"video_url": _url(o["video_key"]), "poster_url": _url(o["poster_key"]),
-                         "manifest_url": _url(o["manifest_key"]), "duration_s": o["duration_s"],
-                         "has_audio": o["has_audio"], "sha256": o["sha256"], "expires_in_s": PRESIGN_TTL,
-                         "download": "curl -sfo clip.mp4 '<video_url>'"}
+        if "audio_key" in o:
+            out["output"] = {"audio_url": _url(o["audio_key"]), "mp3_url": _url(o["mp3_key"]),
+                             "manifest_url": _url(o["manifest_key"]), "duration_s": o["duration_s"], "sha256": o["sha256"],
+                             "expires_in_s": PRESIGN_TTL, "download": "curl -sfo track.wav '<audio_url>'"}
+        else:
+            out["output"] = {"video_url": _url(o["video_key"]), "poster_url": _url(o["poster_key"]),
+                             "manifest_url": _url(o["manifest_key"]), "duration_s": o["duration_s"],
+                             "has_audio": o["has_audio"], "sha256": o["sha256"], "expires_in_s": PRESIGN_TTL,
+                             "download": "curl -sfo clip.mp4 '<video_url>'"}
         notice = BACKENDS.get(item["backend"], ALL_BACKENDS.get(item["backend"], {})).get("notice")
         if notice:
             out["notice"] = notice
@@ -482,7 +520,7 @@ def cost_report(args, caller):
     return {"days": days, "group_by": group or "backend", "jobs": total, "groups": by, "fleet": fleet}
 
 
-TOOLS = {f.__name__: f for f in (get_capabilities, create_upload, generate_video, get_job, list_jobs, cancel_job, gpu_capacity, cost_report)}
+TOOLS = {f.__name__: f for f in (get_capabilities, create_upload, generate_video, generate_audio, get_job, list_jobs, cancel_job, gpu_capacity, cost_report)}
 
 
 def reconcile():

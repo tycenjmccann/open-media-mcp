@@ -8,6 +8,7 @@ Apache-2.0. You, the deployer, are responsible for complying with it.
 |---|---|---|---|
 | `wan2.2` (default) | [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), ComfyUI repack [Comfy-Org/Wan-2.2](https://huggingface.co/Comfy-Org/Wan-2.2), lightx2v 4-step LoRAs | Apache-2.0 | Yes. Follow the model card's use guidance. |
 | `h3` (opt-in) | [MiniMaxAI/MiniMax-H3](https://huggingface.co/MiniMaxAI/MiniMax-H3), [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3), community fine-tune [WarmBloodAban/Minimax-h3_Singularity](https://huggingface.co/WarmBloodAban/Minimax-h3_Singularity) (a derivative, so still bound by the H3 license) | [MiniMax H3 Community License](https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE) | **Not without MiniMax's written license.** |
+| `stable-audio-3` (opt-in) | [Stability AI Stable Audio 3](https://huggingface.co/stabilityai/stable-audio-3-medium) (medium, small-music, small-sfx), ComfyUI repack [Comfy-Org/stable-audio-3](https://huggingface.co/Comfy-Org/stable-audio-3) | [Stability AI Community License](https://stability.ai/license) | Yes if your organization makes **under USD 1M a year** (register for commercial use); above that you need a Stability AI enterprise license. |
 
 ## Using the `h3` backend: what you need to do
 
@@ -31,6 +32,20 @@ Once you have the license you need, turn it on:
 
 ```bash
 npx cdk deploy -c media:backends=wan2.2,h3
+```
+
+## Using the `stable-audio-3` backend
+
+1. **Revenue.** Free for research, non-commercial and commercial use if you (with affiliates) make **under USD 1M a
+   year**. Commercial users must register at https://stability.ai/community-license. Above USD 1M you need an
+   enterprise license from Stability AI.
+2. **Attribution.** Display **"Powered by Stability AI"** on a related website, UI, blog post, about page or product
+   docs, and pass a copy of the license to anyone you distribute the model or a product built on it to. Every
+   stable-audio-3 job result carries that notice.
+3. **Use policy.** Follow Stability AI's Acceptable Use Policy (https://stability.ai/use-policy).
+
+```bash
+npx cdk deploy -c media:backends=wan2.2,stable-audio-3
 ```
 
 ## Adding a backend

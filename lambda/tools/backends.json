@@ -37,7 +37,8 @@
       "draft8": 19.0,
       "draft4": 9.8,
       "exponent": 1.3
-    }
+    },
+    "kind": "video"
   },
   "h3": {
     "title": "MiniMax-H3 (Singularity v1.3 fine-tune by default)",
@@ -78,6 +79,28 @@
       "draft8": 6.0,
       "draft4": 4.5,
       "exponent": 1.6
+    },
+    "kind": "video"
+  },
+  "stable-audio-3": {
+    "kind": "audio",
+    "title": "Stable Audio 3 (Stability AI)",
+    "license": "Stability AI Community License: free, including commercial use, under USD 1M annual revenue (register with Stability AI); above that you need an enterprise license",
+    "notice": "Powered by Stability AI",
+    "output": "stereo WAV + 320 kbps MP3: music, instruments, sound effects, one-shots",
+    "seconds": [
+      1,
+      380
+    ],
+    "default_seconds": 30,
+    "models": [
+      "medium",
+      "small-music",
+      "small-sfx"
+    ],
+    "render_estimate": {
+      "fixed": 8.0,
+      "per_second": 0.15
     }
   }
 }

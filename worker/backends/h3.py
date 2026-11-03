@@ -28,6 +28,7 @@ class H3:
     notice = "Powered by MiniMax H3"
     fps = FPS
     native_audio = True
+    kind = "video"
     models = [
         ("WarmBloodAban/Minimax-h3_Singularity", MODELS_BY_NAME["singularity"], "diffusion_models"),
         ("Comfy-Org/MiniMax-H3", "diffusion_models/" + MODELS_BY_NAME["ref2va"], "diffusion_models"),

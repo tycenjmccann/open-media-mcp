@@ -32,7 +32,7 @@ import { Construct } from "constructs";
 
 const ROOT = path.join(__dirname, "..");
 const METRIC_NAMESPACE = "OpenMediaMcp";
-const KNOWN_BACKENDS = ["wan2.2", "h3"];
+const KNOWN_BACKENDS = ["wan2.2", "h3", "stable-audio-3"];
 
 /** Every knob is a `-c media:<key>=<value>` context value (defaults in cdk.json). */
 class Config {
@@ -72,6 +72,12 @@ export class OpenMediaMcpStack extends Stack {
       Annotations.of(this).addWarning(
         "h3 backend enabled: MiniMax H3 Community License excludes the US, EU, UK and Republic of Korea, and companies " +
         "over USD 20M yearly revenue need MiniMax's written authorization (api@minimax.io). See THIRD_PARTY_MODELS.md.",
+      );
+    }
+    if (backends.includes("stable-audio-3")) {
+      Annotations.of(this).addWarning(
+        "stable-audio-3 backend enabled: Stability AI Community License is free (incl. commercial, register with Stability AI) " +
+        "under USD 1M annual revenue; above that you need a Stability AI enterprise license. Show 'Powered by Stability AI'. See THIRD_PARTY_MODELS.md.",
       );
     }
     const retain = cfg.bool("retainData", true) ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY;

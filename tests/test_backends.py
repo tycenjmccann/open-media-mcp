@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
 from backends import load  # noqa: E402
 
-B = load(["wan2.2", "h3"])
+B = load(["wan2.2", "h3", "stable-audio-3"])
 
 
 def prep(guides=(), soundtrack=None):
@@ -47,3 +47,11 @@ def test_h3_soundtrack_guides_conditioning_only():
 def test_licenses_and_notices():
     assert B["wan2.2"].license.startswith("Apache-2.0") and not B["wan2.2"].notice
     assert B["h3"].notice == "Powered by MiniMax H3"
+
+
+def test_stable_audio_graph():
+    g = B["stable-audio-3"].build_graph({"prompt": "rain on a tin roof", "seconds": 12, "seed": 5, "model": "small-sfx"}, prep(), {}, "j5")
+    assert g["ckpt"]["inputs"]["ckpt_name"] == "stable_audio_3_small_sfx.safetensors"
+    assert g["clip"]["inputs"]["type"] == "stable_audio" and g["latent"]["inputs"]["seconds"] == 12.0
+    assert g["sample"]["inputs"]["steps"] == 8 and g["decode"]["inputs"]["vae"] == ["ckpt", 2]
+    assert B["stable-audio-3"].notice == "Powered by Stability AI"

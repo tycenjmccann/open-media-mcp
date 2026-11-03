@@ -1,9 +1,9 @@
 # open-media-mcp
 
-Open-weight video generation as **MCP tools on Amazon Bedrock AgentCore Gateway**, rendered on a
+Open-weight video **and audio** generation as **MCP tools on Amazon Bedrock AgentCore Gateway**, rendered on a
 **scale-to-zero spot GPU** in your own AWS account.
 
-Any MCP agent (Claude Code, Kiro, Strands, LangGraph, your own) calls `generate_video`, gets a `job_id` back in
+Any MCP agent (Claude Code, Kiro, Strands, LangGraph, your own) calls `generate_video` or `generate_audio`, gets a `job_id` back in
 under a second, and polls `get_job` for a presigned mp4, a poster frame and a provenance manifest. One
 `cdk deploy` builds everything, including the Gateway. Nothing listens on the internet, and no GPU bills while
 the queue is empty.
@@ -19,6 +19,7 @@ the queue is empty.
 |---|---|---|
 | `wan2.2` **(default)** | Wan 2.2 A14B: text-to-video and first-frame (optionally first+last frame) to video, 720p, 16 fps, 2-8 s, silent. A soundtrack can be muxed on. | Apache-2.0 |
 | `h3` (opt-in: **you need a MiniMax license in the US, EU, UK and Korea**) | MiniMax-H3 / Singularity v1.3: picture **and** stereo sound in one pass, up to 9 reference images, reference video and audio, keyframes on the timeline, lip-sync to a real song or VO, 768p, 24 fps, 5-15 s. | MiniMax H3 Community License: **not licensed in the US, EU, UK or Republic of Korea** without MiniMax's written license. Read [THIRD_PARTY_MODELS.md](THIRD_PARTY_MODELS.md). |
+| `stable-audio-3` (opt-in: **free under USD 1M annual revenue**) | Stable Audio 3 (Stability AI): stereo music, instruments, sound effects and one-shots from text, 1 s to about 6 min, as WAV + MP3. Medium, small-music and small-sfx checkpoints. | Stability AI Community License: free incl. commercial use under USD 1M annual revenue (register with Stability AI); above that, a Stability enterprise license. Show "Powered by Stability AI". |
 
 Adding a model is one Python file in `worker/backends/` (weights list + ComfyUI graph) and one JSON entry of
 limits. See [Adding a backend](THIRD_PARTY_MODELS.md#adding-a-backend).
@@ -44,7 +45,8 @@ limits. See [Adding a backend](THIRD_PARTY_MODELS.md#adding-a-backend).
 |---|---|
 | `get_capabilities` | Enabled backends with limits, prompt tag syntax, render estimates, safety settings, live GPU state. |
 | `create_upload` | Presigned PUT URL (15 min) for an input image, video or audio; returns the `key` to pass to `generate_video`. |
-| `generate_video` | Validate, screen the prompt, record, enqueue; returns `job_id`, `eta_s`, and whether a GPU is warm. |
+| `generate_video` | Validate, record, enqueue a video job; returns `job_id`, `eta_s`, and whether a GPU is warm. |
+| `generate_audio` | Same for audio (Stable Audio 3): prompt, seconds, model; `get_job` returns `audio_url` (WAV) and `mp3_url`. |
 | `get_job` | Status (`QUEUED` → `STARTING` → `RUNNING` → `SUCCEEDED` / `FAILED` / `BLOCKED` / `CANCELLED`), phase, timings, presigned `video_url`, `poster_url`, `manifest_url`. |
 | `list_jobs` | Your recent jobs, newest first, optional status filter. |
 | `cancel_job` | Cancel queued or running work (a running render is interrupted on the GPU). |
@@ -64,7 +66,7 @@ npx cdk bootstrap            # once per account/region
 npx cdk deploy               # ~8 min; prints GatewayUrl
 ```
 
-Common options (all in `cdk.json`, override with `-c key=value`):
+Common options (full list under [Configuration](#configuration)):
 
 ```bash
 npx cdk deploy -c media:maxInstances=3 -c media:idleMinutes=30          # fan out to 3 GPUs, stay warm longer
@@ -76,10 +78,38 @@ npx cdk deploy -c media:guardrail=create -c media:outputModeration=true    # tur
 npx cdk deploy -c media:guardrail=<guardrail-id>:<version>              # or your company guardrail
 npx cdk deploy -c media:alarmEmail=oncall@example.com
 npx cdk deploy -c media:backends=wan2.2,h3        # add MiniMax-H3: license required in the US, EU, UK, KR (THIRD_PARTY_MODELS.md)
+npx cdk deploy -c media:backends=wan2.2,stable-audio-3   # add Stable Audio 3: free under USD 1M revenue
 ```
 
 First boot downloads the weights from Hugging Face (Wan 2.2 is about 70 GB) and caches them in the stack's bucket,
 so every later boot, including spot replacements, comes from S3 in a few minutes.
+
+## Configuration
+
+Every setting is a CDK context key. Pass one-offs with `-c media:<key>=<value>`; keep your deployment's settings in
+`cdk.local.json` (gitignored, e.g. `{"media:maxInstances": 3, "media:backends": "wan2.2,h3"}`). `-c` beats
+`cdk.local.json`, which beats the defaults below.
+
+| Key | Default | What it does |
+|---|---|---|
+| `backends` | `wan2.2` | Comma list: `wan2.2`, `h3`, `stable-audio-3` (see [THIRD_PARTY_MODELS.md](THIRD_PARTY_MODELS.md)) |
+| `auth` | `iam` | `iam` (SigV4) or `jwt` with `jwtDiscoveryUrl` + `jwtAllowedClients` / `jwtAllowedAudience`; `tenantClaim` (default `sub`) |
+| `instanceTypes` | `g7e.4xlarge,g7e.2xlarge,g6e.4xlarge` | GPU types in priority order |
+| `maxInstances` | `1` | GPUs that can run at once (one job each) |
+| `onDemand` | `false` | `true` = on-demand instead of spot |
+| `idleMinutes` | `20` | A worker removes itself after this long with an empty queue |
+| `privateNetworking` / `vpcId` + `subnetIds` | off | Private subnets + NAT, or your own VPC |
+| `guardrail` | `none` | `create` = Bedrock Guardrail on prompts (`guardrailSexual`, `guardrailHate`, `guardrailViolence`, `guardrailInsults`, `guardrailMisconduct`, each default `MEDIUM`), or `<id>:<version>` |
+| `outputModeration` | `false` | `true` = Rekognition on input images and 6 output frames (`moderationMinConfidence` 80, `blockedLabels`) |
+| `kms` | `true` | Customer managed key for bucket, table, queues, topic |
+| `retainData` | `true` | Keep bucket, table and key on `cdk destroy` |
+| `inputRetentionDays` / `outputRetentionDays` / `jobRetentionDays` | `7` / `30` / `90` | Lifecycle expiry |
+| `presignTtlSec` | `3600` | Download URL lifetime |
+| `dailyJobLimitPerCaller` / `maxQueuedJobs` | `100` / `50` | Per-caller daily cap (0 = off), global queue cap |
+| `modelCacheBucket` | (none) | Another bucket with `models/<subdir>/<file>` weights to read before Hugging Face |
+| `hfTokenSecretName` | (none) | Secrets Manager secret holding a Hugging Face token, for gated weights |
+| `comfyuiRef` | `master` | ComfyUI branch or tag to clone (pin it in production) |
+| `alarmEmail` | (none) | SNS email for the dead-letter, failure and stuck-queue alarms |
 
 ## Connect an agent
 
@@ -167,11 +197,11 @@ top closed models (Veo 3.1, Kling 4.0) for quality.
 ```
 bin/app.ts, lib/open-media-mcp-stack.ts   CDK stack (everything, incl. AgentCore Gateway + target + interceptor)
 tools.json                                 MCP tool schemas (the Gateway target's inline schema)
-lambda/tools/                              the 8 tools + per-backend limits (backends.json)
+lambda/tools/                              the 9 tools + per-backend limits (backends.json)
 lambda/interceptor/                        Gateway REQUEST interceptor: verified caller identity
 worker/setup.sh                            per-boot bootstrap: uv venv, torch, ComfyUI, weights, systemd
 worker/worker.py                           SQS loop, media prep, ComfyUI, moderation, provenance, S3, events
-worker/backends/                           wan22.py, h3.py (add yours here)
+worker/backends/                           wan22.py, h3.py, stableaudio3.py (add yours here)
 examples/mcp_client.py                     SigV4 MCP client + end-to-end smoke test
 examples/batch.py                          submit a JSON list of jobs, wait, download, write results + cost
 docs/architecture.html                     the diagram above
@@ -189,8 +219,8 @@ survive. Empty and delete them by hand, or deploy with `-c media:retainData=fals
 ## Status
 
 v0.1. Both backends are tested end to end through the MCP: Wan 2.2 (44 demo clips in one 3-GPU session) and
-MiniMax-H3 (5 s with a sung line, 180 s render, USD 0.065, the line transcribed back word for word). Next backends: Wan 2.2 S2V (audio-driven
-lip-sync, Apache-2.0), ACE-Step (music, Apache-2.0), Qwen-Image (stills for start frames, Apache-2.0).
+MiniMax-H3 (5 s with a sung line, 180 s render, USD 0.065, the line transcribed back word for word). Stable Audio 3 was added on 2026-11-02. Next backends: Wan 2.2 S2V (audio-driven lip-sync, Apache-2.0), ACE-Step
+(music, Apache-2.0), Qwen-Image (stills for start frames, Apache-2.0).
 
 ## License
 

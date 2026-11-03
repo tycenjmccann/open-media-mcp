@@ -36,6 +36,7 @@ class Wan22:
     notice = ""
     fps = FPS
     native_audio = False
+    kind = "video"
     models = (
         [(REPO, f"split_files/diffusion_models/{f}", "diffusion_models") for f in UNET.values()]
         + [(REPO, f"split_files/loras/{f}", "loras") for f in LORA.values()]

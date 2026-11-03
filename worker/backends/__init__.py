@@ -11,7 +11,7 @@ Add a backend = add a module here + an entry in lambda/tools/backends.json + KNO
 """
 import importlib
 
-MODULES = {"wan2.2": "wan22", "h3": "h3"}
+MODULES = {"wan2.2": "wan22", "h3": "h3", "stable-audio-3": "stableaudio3"}
 
 
 def load(names):

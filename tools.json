@@ -197,6 +197,50 @@
     }
   },
   {
+    "name": "generate_audio",
+    "description": "Queue one audio generation (Stable Audio 3: stereo music, instruments, sound effects or one-shots from a text prompt) and return a job_id immediately. Poll get_job for audio_url (WAV) and mp3_url. Describe genre, instruments, mood, tempo (BPM) and structure for music; the source, space and action for sound effects.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "What to generate, e.g. 'Warm lo-fi hip hop beat, dusty vinyl drums, mellow Rhodes chords, 82 BPM' or 'Heavy wooden door creaks open in a stone hallway, slow, reverberant'."
+        },
+        "seconds": {
+          "type": "number",
+          "description": "Length, 1-380 s. Default 30."
+        },
+        "model": {
+          "type": "string",
+          "description": "medium (default, best quality, music and SFX), small-music or small-sfx (faster)."
+        },
+        "backend": {
+          "type": "string",
+          "description": "Audio backend. Default stable-audio-3."
+        },
+        "negative_prompt": {
+          "type": "string",
+          "description": "What to avoid, e.g. 'vocals, distortion'."
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Fix for a repeatable take."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Retries with the same key return the same job."
+        },
+        "labels": {
+          "type": "object",
+          "description": "Free-form string labels for cost_report (project, cost_center)."
+        }
+      },
+      "required": [
+        "prompt"
+      ]
+    }
+  },
+  {
     "name": "get_job",
     "description": "Status of one job: QUEUED, STARTING, RUNNING, SUCCEEDED, FAILED, BLOCKED (failed a content check) or CANCELLED, plus phase, timings, and on success presigned URLs for the mp4, a poster frame and the provenance manifest (valid for 1 hour by default; call again for fresh URLs).",
     "inputSchema": {
