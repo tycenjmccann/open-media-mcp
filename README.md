@@ -117,7 +117,7 @@ Measured on one `g7e.4xlarge` (RTX PRO 6000 Blackwell, 96 GB), 5 s clips:
 |---|---|---|
 | `wan2.2` 720p | `draft4` (lightx2v 4-step LoRAs) | **79 s** |
 | `wan2.2` 720p | `full` (20 steps, cfg 3.5) | **669 s** (about 11 min) |
-| `h3` 768p | `full` (20 steps) | about 3 min (a 15 s clip: about 19.5 min) |
+| `h3` 768p, with audio | `full` (20 steps) | **180 s** (a 15 s clip: about 19.5 min) |
 | `h3` 768p | `draft4` | about 1 min |
 
 | `draft4`, 79 s | `full`, 669 s |
@@ -188,8 +188,8 @@ survive. Empty and delete them by hand, or deploy with `-c media:retainData=fals
 
 ## Status
 
-v0.1. Wan 2.2 is the tested default; the H3 backend's ComfyUI graph is a 1:1 port of the client we used for
-production music-video takes (unit-tested for graph equality). Next backends: Wan 2.2 S2V (audio-driven
+v0.1. Both backends are tested end to end through the MCP: Wan 2.2 (44 demo clips in one 3-GPU session) and
+MiniMax-H3 (5 s with a sung line, 180 s render, USD 0.065, the line transcribed back word for word). Next backends: Wan 2.2 S2V (audio-driven
 lip-sync, Apache-2.0), ACE-Step (music, Apache-2.0), Qwen-Image (stills for start frames, Apache-2.0).
 
 ## License
