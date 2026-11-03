@@ -15,9 +15,10 @@ public issue. We aim to acknowledge within 3 business days.
   SNS topic. The bucket blocks public access and denies non-TLS requests. EBS volumes are encrypted.
 - **Least privilege.** Each role is scoped to its prefix or resource; autoscaling writes are tag-conditioned to
   this stack's group.
-- **Content safety.** Prompts go through an Amazon Bedrock Guardrail before they reach the GPU; input images and
-  sampled output frames go through Amazon Rekognition moderation. Flagged renders land in `quarantine/` with no
-  download URL.
+- **Content safety (opt-in, off by default).** `media:guardrail=create` (or your own guardrail id) screens every prompt
+  with an Amazon Bedrock Guardrail before it reaches the GPU; `media:outputModeration=true` runs input images and
+  sampled output frames through Amazon Rekognition and sends flagged renders to `quarantine/` with no download URL.
+  The open models themselves have no content filter.
 - **Audit.** Every tool call and job transition is logged with the tenant and principal (CloudWatch Logs), job
   records keep the guardrail and moderation results, and each output has a provenance manifest (input hashes,
   model, seed, worker, output hash). Gateway API calls are in CloudTrail.
@@ -25,4 +26,4 @@ public issue. We aim to acknowledge within 3 business days.
 ## Your responsibilities
 - Model licenses and acceptable-use terms (see THIRD_PARTY_MODELS.md).
 - Who may call the gateway (IAM policies on `bedrock-agentcore:InvokeGateway`, or your IdP's client and audience).
-- Reviewing quarantined outputs and tuning the guardrail and moderation thresholds to your policy.
+- Deciding whether to turn on the guardrail and moderation, and tuning them to your policy.

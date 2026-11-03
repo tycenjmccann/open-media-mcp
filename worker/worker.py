@@ -326,7 +326,7 @@ class Prep:
 # --------------------------------------------------------------------------- moderation
 BLOCKED = {s.strip() for s in E.get("MEDIA_BLOCKED_LABELS", "").split(",") if s.strip()}
 MIN_CONF = float(E.get("MEDIA_MODERATION_MIN_CONFIDENCE", "80"))
-MODERATE = E.get("MEDIA_MODERATION", "true").lower() == "true"
+MODERATE = E.get("MEDIA_MODERATION", "false").lower() == "true"
 
 
 def moderate_jpegs(paths):

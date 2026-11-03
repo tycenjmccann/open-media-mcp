@@ -134,7 +134,7 @@ def get_capabilities(args, caller):
                        "keyframes, last_frame continue the <Picture> numbering; ref_videos -> <Video n>; "
                        "ref_audios -> <Audio n> (h3 only).",
         "safety": {"prompt_guardrail": bool(E.get("MEDIA_GUARDRAIL_ID")),
-                   "output_moderation": E.get("MEDIA_MODERATION", "true") == "true"},
+                   "output_moderation": E.get("MEDIA_MODERATION", "false") == "true"},
         "limits": {"daily_jobs_per_caller": int(E.get("MEDIA_DAILY_JOB_LIMIT", "0")) or None,
                    "max_queued_jobs": int(E["MEDIA_MAX_QUEUED"]), "url_ttl_s": PRESIGN_TTL},
         "gpu": {"ready_workers": ready_workers(f), "desired": f["desired"], "max": f["max"], "purchase": f["purchase"],
@@ -282,9 +282,12 @@ def generate_video(args, caller):
     idem = args.get("idempotency_key")
     job_id = ("j-" + hashlib.sha256(f"{tenant}|{idem}".encode()).hexdigest()[:24]) if idem else \
         f"j-{now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    retry_blocked = False
     if idem:
         existing = table.get_item(Key={"job_id": job_id}).get("Item")
-        if existing:
+        # A prompt the guardrail blocked never ran; retrying it (e.g. after a policy change) screens it again.
+        retry_blocked = bool(existing) and existing["status"] == "BLOCKED" and str(existing.get("error", "")).startswith("prompt blocked")
+        if existing and not retry_blocked:
             return {"job_id": job_id, "status": existing["status"], "deduplicated": True}
     labels = {str(k)[:64]: str(v)[:256] for k, v in (args.get("labels") or {}).items()} if isinstance(args.get("labels"), dict) else {}
     item = {
@@ -308,7 +311,11 @@ def generate_video(args, caller):
     take_quota(tenant)
     item.update(status="QUEUED", phase="waiting for a GPU")
     try:
-        table.put_item(Item=ddb_safe(item), ConditionExpression="attribute_not_exists(job_id)")
+        if retry_blocked:
+            table.put_item(Item=ddb_safe(item), ConditionExpression="#s = :b", ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues={":b": "BLOCKED"})
+        else:
+            table.put_item(Item=ddb_safe(item), ConditionExpression="attribute_not_exists(job_id)")
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return {"job_id": job_id, "status": "QUEUED", "deduplicated": True}

@@ -29,7 +29,7 @@ limits. See [Adding a backend](THIRD_PARTY_MODELS.md#adding-a-backend).
 |---|---|
 | **No public endpoint** | AgentCore Gateway with `AWS_IAM` (SigV4) or `CUSTOM_JWT` (Cognito, Okta, Entra ID). There is no unauthenticated mode. GPU workers have no inbound rules; they pull from SQS. |
 | **Who did what** | A Gateway REQUEST interceptor stamps the verified caller (`tenant`, `principal`) on every tool call; clients can't forge it. Jobs, uploads, quotas and `list_jobs` are tenant-scoped. Every call and job transition is logged. |
-| **Content safety** | Prompts pass an **Amazon Bedrock Guardrail** (created for you with MEDIUM filters, tunable per category, or bring your own) before any GPU time is spent. Input images and 6 sampled output frames pass **Amazon Rekognition** moderation; flagged renders go to `quarantine/` with no download URL (`BLOCKED`). |
+| **Content safety (opt-in)** | Off by default: straight generation, no filters. Turn on `media:guardrail=create` (an **Amazon Bedrock Guardrail** on every prompt, MEDIUM per category and tunable) or bring your company's guardrail, and/or `media:outputModeration=true` (**Amazon Rekognition** on input images and 6 sampled output frames; flagged renders go to `quarantine/` with no download URL, status `BLOCKED`). |
 | **Provenance** | Each output gets a manifest: input SHA-256s, backend, model files, seed, steps, ComfyUI commit, worker instance, guardrail and moderation results, output SHA-256. The mp4 carries `ai_generated=true` metadata and the license notice where one is required. |
 | **Chargeback** | Every job records its GPU seconds, the live price of the instance it ran on, and its USD cost. `cost_report` totals it per label for showback or chargeback; the fleet total shows boot and idle overhead separately. |
 | **Cost control** | Spot first across GPU types and AZs (on-demand switch is one tool call), one GPU per outstanding job up to `maxInstances`, workers remove themselves after `idleMinutes` with an empty queue, per-caller daily job cap, global queue cap. |
@@ -72,7 +72,8 @@ npx cdk deploy -c media:auth=jwt \
   -c media:jwtDiscoveryUrl=https://cognito-idp.us-east-1.amazonaws.com/<pool>/.well-known/openid-configuration \
   -c media:jwtAllowedClients=<app-client-id>                            # your IdP instead of SigV4
 npx cdk deploy -c media:privateNetworking=true                          # private subnets + NAT
-npx cdk deploy -c media:guardrail=<guardrail-id>:<version>              # your company guardrail
+npx cdk deploy -c media:guardrail=create -c media:outputModeration=true    # turn on prompt + frame checks
+npx cdk deploy -c media:guardrail=<guardrail-id>:<version>              # or your company guardrail
 npx cdk deploy -c media:alarmEmail=oncall@example.com
 npx cdk deploy -c media:backends=wan2.2,h3        # add MiniMax-H3: license required in the US, EU, UK, KR (THIRD_PARTY_MODELS.md)
 ```

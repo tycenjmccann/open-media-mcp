@@ -22,8 +22,8 @@ The MiniMax H3 Community License (read the full text; this is a summary, not leg
    UI, and products built on it must say **"Powered by MiniMax H3"**. Every h3 job result from this MCP carries
    that notice (`notice` field, mp4 `copyright` tag, provenance manifest) so your UI can show it.
 4. **Use policy.** Follow the license's acceptable-use exhibit (for example: no military use; disclose AI
-   content you publish; outputs may not be used to train other models). The prompt guardrail and output
-   moderation in this stack help, but they are not a substitute for your own policy and review.
+   content you publish; outputs may not be used to train other models). The stack's optional prompt guardrail and
+   output moderation (both off by default) can help, but they are not a substitute for your own policy and review.
 5. **Hosted services.** If you offer it to third parties, bind your users to the same use restrictions and keep
    an abuse reporting channel.
 

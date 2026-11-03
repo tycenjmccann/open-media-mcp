@@ -138,7 +138,7 @@ export class OpenMediaMcpStack extends Stack {
     });
 
     // ---------------------------------------------------------------- guardrail
-    const guardrailMode = cfg.str("guardrail", "create");
+    const guardrailMode = cfg.str("guardrail", "none");
     let guardrailId = "";
     let guardrailVersion = "";
     let guardrailArn = "";
@@ -273,7 +273,7 @@ export class OpenMediaMcpStack extends Stack {
       MEDIA_QUEUE_URL: queue.queueUrl,
       MEDIA_LOG_GROUP: workerLogs.logGroupName,
       MEDIA_IDLE_MINUTES: String(idleMinutes),
-      MEDIA_MODERATION: String(cfg.bool("outputModeration", true)),
+      MEDIA_MODERATION: String(cfg.bool("outputModeration", false)),
       MEDIA_MODERATION_MIN_CONFIDENCE: String(cfg.num("moderationMinConfidence", 80)),
       MEDIA_BLOCKED_LABELS: cfg.list("blockedLabels", ["Explicit", "Violence", "Visually Disturbing", "Hate Symbols"]).join(","),
       MEDIA_HF_TOKEN_SECRET: hfSecret,
@@ -358,7 +358,7 @@ export class OpenMediaMcpStack extends Stack {
         MEDIA_DAILY_JOB_LIMIT: String(cfg.num("dailyJobLimitPerCaller", 100)),
         MEDIA_MAX_QUEUED: String(cfg.num("maxQueuedJobs", 50)),
         MEDIA_JOB_RETENTION_DAYS: String(cfg.num("jobRetentionDays", 90)),
-        MEDIA_MODERATION: String(cfg.bool("outputModeration", true)),
+        MEDIA_MODERATION: String(cfg.bool("outputModeration", false)),
         MEDIA_IDLE_MINUTES: String(idleMinutes),
         MEDIA_INSTANCE_TYPES: instanceTypes.join(","),
       },
