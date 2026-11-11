@@ -23,6 +23,8 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+import identity  # shared/identity.py, copied into this bundle at synth
+
 E = os.environ
 cfg = Config(retries={"max_attempts": 5, "mode": "adaptive"})
 ddb = boto3.resource("dynamodb", config=cfg)
@@ -34,6 +36,7 @@ asg = boto3.client("autoscaling", config=cfg)
 bedrock = boto3.client("bedrock-runtime", config=cfg)
 cloudwatch = boto3.client("cloudwatch", config=cfg)
 ec2 = boto3.client("ec2", config=cfg)
+rek = boto3.client("rekognition", config=cfg)
 
 with open(os.path.join(os.path.dirname(__file__), "backends.json")) as fh:
     ALL_BACKENDS = json.load(fh)
@@ -42,6 +45,8 @@ BACKENDS = {k: v for k, v in ALL_BACKENDS.items() if k in ENABLED}
 DEFAULT_BACKEND = next((b for b in ENABLED if ALL_BACKENDS.get(b, {}).get("kind", "video") == "video"), ENABLED[0])
 FINAL = {"SUCCEEDED", "FAILED", "BLOCKED", "CANCELLED"}
 ACTIVE = {"QUEUED", "STARTING", "RUNNING"}
+IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
+MAX_IDENTITY_IMAGE_BYTES = 15 * 1024 * 1024
 UPLOAD_TYPES = {
     "image/png", "image/jpeg", "image/webp",
     "audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp4", "audio/aac", "audio/flac", "audio/ogg",
@@ -103,10 +108,24 @@ def fleet():
     }
 
 
-def scale_out(f=None):
-    """One GPU per outstanding job, capped at MEDIA_MAX_INSTANCES. Never scales in (workers do that themselves)."""
+def gpus_wanted(f, render_s=None):
+    """A job that renders for at least a cold start gets its own GPU. Shorter jobs (images, short audio) share: a new
+    GPU only pays off once the waiting ones add up to a cold start of work, because a warm GPU clears them sooner than
+    a new one boots. Jobs already on a GPU keep theirs."""
+    backlog = f["queued"] + f["in_flight"]
+    if not backlog:
+        return 0
+    if render_s is None or render_s >= COLD_START_S:
+        want = backlog
+    else:
+        want = max(1, f["in_flight"] + math.ceil(f["queued"] * render_s / COLD_START_S))
+    return min(int(E["MEDIA_MAX_INSTANCES"]), want)
+
+
+def scale_out(f=None, render_s=None):
+    """Raise the fleet to gpus_wanted, capped at MEDIA_MAX_INSTANCES. Never scales in (workers do that themselves)."""
     f = f or fleet()
-    want = min(int(E["MEDIA_MAX_INSTANCES"]), f["queued"] + f["in_flight"])
+    want = gpus_wanted(f, render_s)
     if want > f["desired"]:
         asg.set_desired_capacity(AutoScalingGroupName=E["MEDIA_ASG"], DesiredCapacity=want, HonorCooldown=False)
         f["desired"] = want
@@ -117,8 +136,10 @@ def ready_workers(f):
     return sum(1 for w in f["workers"] if str(w.get("phase", "")).startswith(("ready", "rendering", "preparing")))
 
 
-def estimate(backend, seconds, quality=None):
+def estimate(backend, seconds, quality=None, images=1, steps=None):
     r = BACKENDS[backend]["render_estimate"]
+    if "per_step" in r:  # images: one sampling pass per image
+        return int(r["fixed"] + r["per_step"] * images * (steps or BACKENDS[backend]["default_steps"]))
     if "per_second" in r:
         return int(r["fixed"] + r["per_second"] * seconds)
     return int(r[quality] * seconds ** r["exponent"])
@@ -129,12 +150,19 @@ def get_capabilities(args, caller):
     f = fleet()
     return {
         "backends": {k: {kk: vv for kk, vv in v.items() if kk != "render_estimate"} |
-                     {"render_estimate_s": {q: estimate(k, v["default_seconds"], q) for q in v.get("qualities", ["full"])}}
+                     {"render_estimate_s": {q: estimate(k, v.get("default_seconds"), q) for q in v.get("qualities", ["full"])}}
                      for k, v in BACKENDS.items()},
         "default_backend": DEFAULT_BACKEND,
-        "prompt_tags": "Reference media are tagged in the prompt by upload order: refs -> <Picture 1..n>; first_frame, "
-                       "keyframes, last_frame continue the <Picture> numbering; ref_videos -> <Video n>; "
-                       "ref_audios -> <Audio n> (h3 only).",
+        "prompt_tags": "Reference media are tagged in the prompt by upload order: refs -> <Picture 1..n>; with recipe r1+ "
+                       "first_frame, keyframes, last_frame continue the <Picture> numbering; ref_videos -> <Video n>; "
+                       "a ref_video's own sound takes the next <Audio n> label, then ref_audios continue it (h3 only). "
+                       "generate_image with h3-image: refs -> <Picture 1..16>, and <Picture 1> is the image to edit.",
+        "recipes": "Each backend lists recipes (named, frozen render settings) and its default_recipe. Pass recipe to pin "
+                   "one; pass tuning {knob: value} to override single knobs for experiments.",
+        "identity_check": {"tool": "check_identity (images) or generate_video identity_check (sampled video frames)",
+                           "pass_at": identity.PASS_AT, "review_at": identity.REVIEW_AT, "min_face_px": identity.MIN_FACE,
+                           "rules": "PASS: score >= pass_at on a clear face. FAIL: under review_at on a clear face. "
+                                    "REVIEW: in between, or the face is too small or covered to judge."},
         "safety": {"prompt_guardrail": bool(E.get("MEDIA_GUARDRAIL_ID")),
                    "output_moderation": E.get("MEDIA_MODERATION", "false") == "true"},
         "limits": {"daily_jobs_per_caller": int(E.get("MEDIA_DAILY_JOB_LIMIT", "0")) or None,
@@ -191,11 +219,44 @@ def _window(item, caller, what):
     return out
 
 
+def resolve_tuning(b, args):
+    """Recipe = a named, frozen set of render knobs, so a job can be reproduced and versions compared side by side.
+    `tuning` overrides single knobs on top of the recipe (for experiments)."""
+    recipes = b.get("recipes") or {}
+    if not recipes:
+        return None, {}
+    recipe = args.get("recipe") or b["default_recipe"]
+    if recipe not in recipes:
+        raise ToolError(f"recipe must be one of {sorted(recipes)}")
+    knobs = {**b["tuning"], **recipes[recipe]}
+    extra = args.get("tuning") or {}
+    if not isinstance(extra, dict):
+        raise ToolError("tuning must be an object of knob: value")
+    for k, v in extra.items():
+        rule = b["tuning_choices"].get(k)
+        if rule is None:
+            raise ToolError(f"unknown tuning knob {k!r}; knobs: {sorted(b['tuning'])}")
+        if isinstance(rule, list):
+            if v not in rule:
+                raise ToolError(f"tuning {k} must be one of {rule}")
+        else:
+            kind, rng = rule.split(":")
+            lo, hi = (float(x) for x in rng.split("-"))
+            try:
+                v = int(v) if kind == "int" else float(v)
+            except (TypeError, ValueError):
+                raise ToolError(f"tuning {k} must be a number")
+            if not lo <= v <= hi:
+                raise ToolError(f"tuning {k} must be between {rng.replace('-', ' and ')}")
+        knobs[k] = v
+    return recipe, knobs
+
+
 def normalize(args, caller):
     backend = args.get("backend") or DEFAULT_BACKEND
     videos = [k for k, v in BACKENDS.items() if v.get("kind", "video") == "video"]
     if backend not in videos:
-        raise ToolError(f"backend must be one of {videos} (use generate_audio for audio backends)")
+        raise ToolError(f"backend must be one of {videos} (use generate_audio / generate_image for audio and image backends)")
     b = BACKENDS[backend]
     prompt = str(args.get("prompt") or "").strip()
     if not prompt or len(prompt) > 4000:
@@ -212,6 +273,7 @@ def normalize(args, caller):
     lim = b["limits"]
     spec = {"backend": backend, "prompt": prompt, "aspect": aspect, "quality": quality, "model": model,
             "seed": int(args["seed"]) if args.get("seed") is not None else random.randint(1, 2**31 - 1)}
+    spec["recipe"], spec["tuning"] = resolve_tuning(b, args)
     if args.get("negative_prompt"):
         spec["negative_prompt"] = str(args["negative_prompt"])[:2000]
     for field in ("refs", "ref_videos", "ref_audios", "keyframes"):
@@ -244,12 +306,40 @@ def normalize(args, caller):
         spec["soundtrack"] = w
         if "from" in w and "to" in w:
             soundtrack_len = w["to"] - w["from"]
+    ic = args.get("identity_check")
+    if ic is not None and ic is not False:
+        ic = {} if ic is True else ic
+        if not isinstance(ic, dict):
+            raise ToolError("identity_check must be an object: {} checks against refs, or {reference: [{key}], pass_at, ...}")
+        ref = ic.get("reference") or [r["key"] for r in spec["refs"]]
+        if not ref:
+            raise ToolError("identity_check needs reference images: pass refs, or identity_check.reference")
+        spec["identity_check"] = {"reference": identity_reference(ref, caller, "identity_check.reference"),
+                                  **identity_options(ic, "identity_check")}
     lo, hi = b["seconds"]
     seconds = _num(args, "seconds", lo, hi)
     if seconds is None:
         seconds = min(hi, max(lo, (spec.get("soundtrack", {}).get("at", 0) + soundtrack_len))) if soundtrack_len else b["default_seconds"]
     spec["seconds"] = round(seconds, 3)
     return spec
+
+
+def identity_options(args, what):
+    """Thresholds a caller may tighten or loosen per request; defaults are the calibrated ones."""
+    t = {"pass_at": _num(args, "pass_at", 50, 100) or identity.PASS_AT,
+         "review_at": _num(args, "review_at", 0, 100) or identity.REVIEW_AT,
+         "min_face": int(_num(args, "min_face", 20, 2000) or identity.MIN_FACE)}
+    if t["review_at"] > t["pass_at"]:
+        raise ToolError(f"{what}: review_at must not be above pass_at")
+    return t
+
+
+def identity_reference(items, caller, what):
+    items = [items] if isinstance(items, (str, dict)) else list(items or [])
+    keys = [i.get("key") if isinstance(i, dict) else i for i in items]
+    if not 1 <= len(keys) <= 5:
+        raise ToolError(f"{what}: 1 to 5 reference image keys (the character sheet and/or approved images)")
+    return [_key(k, caller, what) for k in keys]
 
 
 def screen_prompt(prompt):
@@ -310,6 +400,54 @@ def generate_audio(args, caller):
     return submit(normalize_audio(args, caller), args, caller)
 
 
+def _whole(args, k, lo, hi):
+    v = _num(args, k, lo, hi)
+    if v is not None and v != int(v):
+        raise ToolError(f"{k} must be a whole number")
+    return None if v is None else int(v)
+
+
+def normalize_image(args, caller):
+    images = [k for k, v in BACKENDS.items() if v.get("kind") == "image"]
+    if not images:
+        raise ToolError("no image backend is enabled on this stack (media:backends)")
+    backend = args.get("backend") or images[0]
+    if backend not in images:
+        raise ToolError(f"backend must be one of {images}")
+    b = BACKENDS[backend]
+    prompt = str(args.get("prompt") or "").strip()
+    max_chars = b.get("max_prompt_chars", 4000)  # h3-image takes a full caption when enhance_prompt is off
+    if not prompt or len(prompt) > max_chars:
+        raise ToolError(f"prompt is required (max {max_chars} characters)")
+    aspect = args.get("aspect") or b["aspects"][0]
+    if aspect not in b["aspects"]:
+        raise ToolError(f"aspect must be one of {b['aspects']}")
+    steps = _whole(args, "steps", *b["steps"]) or b["default_steps"]
+    guidance = _num(args, "cfg", *b["cfg"])
+    count = _whole(args, "count", *b["count"]) or 1
+    quality = args.get("quality") or "full"
+    if quality not in b.get("qualities", ["full"]):
+        raise ToolError(f"quality must be one of {b.get('qualities', ['full'])} for {backend}")
+    spec = {"backend": backend, "kind": "image", "prompt": prompt, "aspect": aspect, "steps": steps,
+            "cfg": round(b["default_cfg"] if guidance is None else guidance, 2), "count": count, "quality": quality,
+            "seed": int(args["seed"]) if args.get("seed") is not None else random.randint(1, 2**31 - 1)}
+    if args.get("negative_prompt"):
+        if b.get("negative_prompt") is False:
+            raise ToolError(f"{backend} takes no negative_prompt (it samples without CFG); describe what you want instead")
+        spec["negative_prompt"] = str(args["negative_prompt"])[:2000]
+    refs = args.get("refs") or []
+    limit = b.get("limits", {}).get("refs", 0)
+    if not isinstance(refs, list) or len(refs) > limit:
+        raise ToolError(f"{backend} accepts at most {limit} refs" + ("" if limit else " (use backend h3-image to edit images)"))
+    spec["refs"] = [{"key": _key(i.get("key") if isinstance(i, dict) else i, caller, "refs")} for i in refs]
+    spec["recipe"], spec["tuning"] = resolve_tuning(b, args)
+    return spec
+
+
+def generate_image(args, caller):
+    return submit(normalize_image(args, caller), args, caller)
+
+
 def submit(spec, args, caller):
     tenant = caller["tenant"]
     idem = args.get("idempotency_key")
@@ -355,19 +493,45 @@ def submit(spec, args, caller):
         raise
     sqs.send_message(QueueUrl=E["MEDIA_QUEUE_URL"], MessageBody=json.dumps({"job_id": job_id}))
     f["queued"] += 1
-    f = scale_out(f)
-    render = estimate(spec["backend"], spec["seconds"], spec["quality"])
+    render = estimate(spec["backend"], spec.get("seconds"), spec["quality"], spec.get("count", 1), spec.get("steps"))
+    f = scale_out(f, render)
     warm = ready_workers(f) > 0
     ahead = f["queued"] - 1 + f["in_flight"]
     eta = render + (0 if warm else COLD_START_S) + ahead * render // max(1, f["desired"])
     print(json.dumps({"event": "job_queued", "job_id": job_id, "tenant": tenant, "backend": spec["backend"],
-                      "seconds": spec["seconds"], "quality": spec["quality"]}))
-    out = {"job_id": job_id, "status": "QUEUED", "backend": spec["backend"], "seconds": spec["seconds"],
-           "aspect": spec.get("aspect"), "model": spec.get("model"), "quality": spec["quality"], "seed": spec["seed"], "eta_s": int(eta),
+                      "seconds": spec.get("seconds"), "quality": spec["quality"]}))
+    out = {"job_id": job_id, "status": "QUEUED", "backend": spec["backend"], "seconds": spec.get("seconds"),
+           "aspect": spec.get("aspect"), "model": spec.get("model"), "quality": spec["quality"], "seed": spec["seed"],
+           "recipe": spec.get("recipe"), **({"count": spec["count"]} if "count" in spec else {}), "eta_s": int(eta),
            "gpu": "ready" if warm else "starting (cold start about 5 min)", "poll": "get_job every 30-60 s"}
     if BACKENDS[spec["backend"]]["notice"]:
         out["notice"] = BACKENDS[spec["backend"]]["notice"]
     return out
+
+
+def _read_image(key, caller, what):
+    head = s3.head_object(Bucket=E["MEDIA_BUCKET"], Key=_key(key, caller, what))
+    if head.get("ContentType") not in IMAGE_TYPES:
+        raise ToolError(f"{what}: must be a PNG, JPEG or WebP image (got {head.get('ContentType')})")
+    if head["ContentLength"] > MAX_IDENTITY_IMAGE_BYTES:
+        raise ToolError(f"{what}: image is over {MAX_IDENTITY_IMAGE_BYTES // 2**20} MB")
+    return s3.get_object(Bucket=E["MEDIA_BUCKET"], Key=key)["Body"].read()
+
+
+def check_identity(args, caller):
+    """Is this image the same character as the reference images? Rekognition face match, answered in a few seconds."""
+    ref_keys = identity_reference(args.get("reference"), caller, "reference")
+    if not args.get("image"):
+        raise ToolError("image: the key of the image to check (from create_upload)")
+    t = identity_options(args, "check_identity")
+    refs, counts = identity.reference_faces(rek, [_read_image(k, caller, "reference") for k in ref_keys])
+    if not refs:
+        raise ToolError("no face found in the reference image(s)")
+    r = identity.score_image(rek, refs, _read_image(args["image"], caller, "image"), **t)
+    if r.get("matched_reference") is not None:
+        r["matched_reference"] = ref_keys[r["matched_reference"]]
+    print(json.dumps({"event": "identity_check", "tenant": caller["tenant"], "verdict": r["verdict"], "score": r["score"]}))
+    return {**r, "reference_faces": dict(zip(ref_keys, counts)), "thresholds": t}
 
 
 def _own(job_id, caller):
@@ -388,14 +552,19 @@ def get_job(args, caller):
     spec = json.loads(item.pop("spec"))
     out = {k: item.get(k) for k in ("job_id", "status", "phase", "backend", "created_at", "started_at",
                                     "render_started_at", "finished_at", "attempt", "error", "timings", "labels",
-                                    "moderation", "quarantine_key", "cost") if item.get(k) is not None}
-    out["request"] = {k: spec.get(k) for k in ("kind", "aspect", "seconds", "quality", "model", "seed") if spec.get(k) is not None}
+                                    "moderation", "identity", "quarantine_key", "cost", "prompt_enhanced") if item.get(k) is not None}
+    out["request"] = {k: spec.get(k) for k in ("kind", "aspect", "seconds", "quality", "model", "seed", "recipe", "tuning",
+                                               "count", "steps", "cfg") if spec.get(k) is not None}
     if item["status"] == "SUCCEEDED":
         o = item["output"]
         if "audio_key" in o:
             out["output"] = {"audio_url": _url(o["audio_key"]), "mp3_url": _url(o["mp3_key"]),
                              "manifest_url": _url(o["manifest_key"]), "duration_s": o["duration_s"], "sha256": o["sha256"],
                              "expires_in_s": PRESIGN_TTL, "download": "curl -sfo track.wav '<audio_url>'"}
+        elif "images" in o:
+            imgs = [{"url": _url(i["key"]), **{k: i[k] for k in ("seed", "width", "height", "sha256")}} for i in o["images"]]
+            out["output"] = {"image_url": imgs[0]["url"], "images": imgs, "manifest_url": _url(o["manifest_key"]),
+                             "expires_in_s": PRESIGN_TTL, "download": "curl -sfo image.png '<image_url>'"}
         else:
             out["output"] = {"video_url": _url(o["video_key"]), "poster_url": _url(o["poster_key"]),
                              "manifest_url": _url(o["manifest_key"]), "duration_s": o["duration_s"],
@@ -520,17 +689,18 @@ def cost_report(args, caller):
     return {"days": days, "group_by": group or "backend", "jobs": total, "groups": by, "fleet": fleet}
 
 
-TOOLS = {f.__name__: f for f in (get_capabilities, create_upload, generate_video, generate_audio, get_job, list_jobs, cancel_job, gpu_capacity, cost_report)}
+TOOLS = {f.__name__: f for f in (get_capabilities, create_upload, generate_video, generate_audio, generate_image,
+                                  check_identity, get_job, list_jobs, cancel_job, gpu_capacity, cost_report)}
 
 
 def reconcile():
-    """Scheduled: queued jobs must always have capacity coming (covers a worker that scaled in during a submit)."""
+    """Scheduled: queued jobs must always have a GPU coming (covers a worker that scaled in during a submit).
+    It only guarantees the first one; submits size the fleet, since only they know how long a job renders."""
     f = fleet()
-    in_service = sum(1 for i in f["instances"] if i["state"] in ("InService", "Pending", "Pending:Wait", "Pending:Proceed"))
-    if (f["queued"] or f["in_flight"]) and in_service < min(int(E["MEDIA_MAX_INSTANCES"]), f["queued"] + f["in_flight"]):
-        want = min(int(E["MEDIA_MAX_INSTANCES"]), f["queued"] + f["in_flight"])
-        asg.set_desired_capacity(AutoScalingGroupName=E["MEDIA_ASG"], DesiredCapacity=max(want, f["desired"]), HonorCooldown=False)
-        print(json.dumps({"event": "reconcile_scale_out", "desired": want, "queued": f["queued"]}))
+    coming = sum(1 for i in f["instances"] if i["state"] in ("InService", "Pending", "Pending:Wait", "Pending:Proceed"))
+    if (f["queued"] or f["in_flight"]) and not coming and f["desired"] < 1:
+        asg.set_desired_capacity(AutoScalingGroupName=E["MEDIA_ASG"], DesiredCapacity=1, HonorCooldown=False)
+        print(json.dumps({"event": "reconcile_scale_out", "desired": 1, "queued": f["queued"]}))
     return {"ok": True}
 
 

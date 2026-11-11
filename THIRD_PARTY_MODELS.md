@@ -9,6 +9,8 @@ Apache-2.0. You, the deployer, are responsible for complying with it.
 | `wan2.2` (default) | [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), ComfyUI repack [Comfy-Org/Wan-2.2](https://huggingface.co/Comfy-Org/Wan-2.2), lightx2v 4-step LoRAs | Apache-2.0 | Yes. Follow the model card's use guidance. |
 | `h3` (opt-in) | [MiniMaxAI/MiniMax-H3](https://huggingface.co/MiniMaxAI/MiniMax-H3), [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3), community fine-tune [WarmBloodAban/Minimax-h3_Singularity](https://huggingface.co/WarmBloodAban/Minimax-h3_Singularity) (a derivative, so still bound by the H3 license) | [MiniMax H3 Community License](https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE) | **Not without MiniMax's written license.** |
 | `stable-audio-3` (opt-in) | [Stability AI Stable Audio 3](https://huggingface.co/stabilityai/stable-audio-3-medium) (medium, small-music, small-sfx), ComfyUI repack [Comfy-Org/stable-audio-3](https://huggingface.co/Comfy-Org/stable-audio-3) | [Stability AI Community License](https://stability.ai/license) | Yes if your organization makes **under USD 1M a year** (register for commercial use); above that you need a Stability AI enterprise license. |
+| `qwen-image` (opt-in) | [Qwen/Qwen-Image](https://huggingface.co/Qwen/Qwen-Image) (diffusion model and VAE) with the [Qwen2.5-VL-7B](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) text encoder, ComfyUI fp8 repack [Comfy-Org/Qwen-Image_ComfyUI](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI) | Apache-2.0 | Yes. Follow the model card's use guidance. |
+| `h3-image` (opt-in) | [MiniMaxAI/MiniMax-H3-Image](https://huggingface.co/MiniMaxAI/MiniMax-H3-Image), ComfyUI int8 repack [Comfy-Org/MiniMax-H3-Image](https://huggingface.co/Comfy-Org/MiniMax-H3-Image), the H3 text encoder from [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3), and the expansion instructions of [MiniMaxAI/MiniMax-H3-Image-PE](https://huggingface.co/MiniMaxAI/MiniMax-H3-Image-PE) (fetched at boot) | [MiniMax-H3-Image Community License](https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/blob/main/LICENSE) | **Not without MiniMax's written license.** |
 
 ## Using the `h3` backend: what you need to do
 
@@ -46,6 +48,32 @@ npx cdk deploy -c media:backends=wan2.2,h3
 
 ```bash
 npx cdk deploy -c media:backends=wan2.2,stable-audio-3
+```
+
+## Using the `h3-image` backend
+
+The MiniMax-H3-Image Community License is a separate license from the H3 one (read the full text; this is a
+summary, not legal advice):
+
+1. **Territory.** Same Excluded Territories as H3: the **United States, the European Union, the United Kingdom and
+   the Republic of Korea**. Use there, of the model or of its outputs, is not licensed without MiniMax's written
+   license (request it at https://platform.minimax.io/console/license).
+2. **Revenue and hosting.** Written authorization is also needed if you and your affiliates make **more than
+   USD 1M a year** (annualized), or if you offer it to third parties as a hosted service.
+3. **Attribution.** A commercial product or service that uses it must prominently show **"MiniMax-H3-Image"** in its
+   UI. Every h3-image result carries "Powered by MiniMax-H3-Image" (`notice`, the PNG `Copyright` text chunk and the
+   provenance manifest), and every PNG is tagged `ai_generated=true`.
+4. **Use policy.** Follow Exhibit A (for example: disclose machine-generated content you publish; no impersonation
+   without consent; no military use; outputs may not be used to improve other models).
+5. **Hosted services.** Before offering it to third parties, bind them to the same restrictions, keep safeguards
+   in place (the stack's guardrail and output moderation are off by default) and keep an abuse reporting channel.
+
+The prompt expander (`enhance_prompt`, on by default) sends MiniMax-H3-Image-PE's own instructions to the Bedrock
+model set by `promptModel`, instead of running the PE weights. Those instructions are fetched at boot from the PE
+repo at a pinned revision (`h3ImagePeRef`), not vendored, because they ship under the same license.
+
+```bash
+npx cdk deploy -c media:backends=wan2.2,qwen-image,h3-image
 ```
 
 ## Adding a backend

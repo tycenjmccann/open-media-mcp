@@ -32,6 +32,8 @@ from botocore.config import Config
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backends as backend_registry  # noqa: E402
+import identity  # noqa: E402  (shared/identity.py, deployed next to this file)
+import prompting  # noqa: E402
 
 VERSION = "0.1.0"
 E = os.environ
@@ -270,6 +272,60 @@ def sha256(path):
     return h.hexdigest()
 
 
+LOUDNESS = "I=-14:TP=-1.5:LRA=11"  # streaming-platform loudness target (EBU R128 measurement)
+X264_HQ = ["-c:v", "libx264", "-preset", "slow", "-crf", "16",
+           "-vf", "scale=in_color_matrix=bt709:out_color_matrix=bt709:in_range=tv:out_range=tv,format=yuv420p,"
+                  "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+           "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
+
+
+def loudnorm_filter(path):
+    """Two-pass loudnorm: measure first so the second pass can apply one linear gain instead of riding the level."""
+    r = subprocess.run([FFMPEG, "-hide_banner", "-nostats", "-i", path, "-vn",
+                        "-af", f"loudnorm={LOUDNESS}:print_format=json", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    try:
+        m = json.loads(r.stderr[r.stderr.rindex("{"):r.stderr.rindex("}") + 1])
+        if float(m["input_i"]) < -60:  # near-silent: leave it alone
+            return None
+    except (ValueError, KeyError):
+        return None
+    return (f"loudnorm={LOUDNESS}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}"
+            f":measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true")
+
+
+def finish_video(raw, tmp, tuning, soundtrack=None, at=0.0):
+    """One ffmpeg pass: mux a soundtrack (or master the model's own audio) and do the delivery encode.
+    -> (path, record of what was applied). Recipe r0 = stream copy, so its output is byte-for-byte what ComfyUI wrote."""
+    hq = tuning.get("encode") == "hq"
+    _, kinds = probe(raw)
+    rec = {"encode": "x264 crf16 slow bt709" if hq else "copy", "audio": None}
+    args, fc, amap = ["-i", raw], None, None
+    if soundtrack:
+        args += ["-i", soundtrack]
+        fc, amap, rec["audio"] = f"[1:a]adelay={int(round(at * 1000))}:all=1,apad[a]", "[a]", "soundtrack muxed"
+    elif "audio" in kinds:
+        amap, rec["audio"] = "0:a", "model audio"
+        ln = loudnorm_filter(raw) if tuning.get("audio_master") else None
+        if ln:
+            fc, amap, rec["audio"] = f"[0:a]{ln},aresample=48000[a]", "[a]", f"model audio, loudnorm {LOUDNESS}, 48 kHz"
+    if not hq and not fc and not soundtrack:
+        return raw, rec
+    out = os.path.join(tmp, "finished.mp4")
+    audio = (["-map", amap, "-c:a", "aac", "-b:a", "192k"] + (["-ar", "48000"] if hq else [])) if amap else ["-an"]
+    ffmpeg(*args, *(["-filter_complex", fc] if fc else []), "-map", "0:v", *(X264_HQ if hq else ["-c:v", "copy"]),
+           *audio, *(["-shortest"] if soundtrack else []), "-movflags", "+faststart", out)
+    return out, rec
+
+
+def pad_audio(path, length_s, frame_s, prep_tool):
+    """Pad with silence to a whole number of audio-VAE frames so the encoder doesn't crop the head of the guide."""
+    target = (int(length_s / frame_s) + 1) * frame_s
+    out = prep_tool.out(path, ".wav")
+    ffmpeg("-i", path, "-af", f"apad=whole_dur={target:.3f}", "-ac", "2", "-ar", "48000", out)
+    return out
+
+
 class Prep:
     """Download each input once, trim/convert it to what the model expects, record hashes for provenance."""
 
@@ -354,6 +410,36 @@ def sample_frames(video, tmp, n=6):
     return [to_jpeg(video, os.path.join(tmp, f"mod_{i}.jpg"), dur * (i + 0.5) / n) for i in range(n)]
 
 
+# --------------------------------------------------------------------------- identity
+def check_identity_video(cfg, video, tmp, n=8):
+    """Rekognition face match of n evenly spaced frames against the reference images; never fails the job."""
+    thr = {k: cfg[k] for k in ("pass_at", "review_at", "min_face") if k in cfg}
+    try:
+        datas = [s3.get_object(Bucket=E["MEDIA_BUCKET"], Key=k)["Body"].read() for k in cfg["reference"]]
+        refs, counts = identity.reference_faces(rek, datas)
+        if not refs:
+            return {"verdict": "REVIEW", "reason": "no face found in the reference image(s)"}
+        dur = probe(video)[0]
+        frames = []
+        for i in range(n):
+            t = dur * (i + 0.5) / n
+            with open(to_jpeg(video, os.path.join(tmp, f"id_{i}.jpg"), t), "rb") as fh:
+                r = identity.score_image(rek, refs, fh.read(), **thr)
+            r.pop("face_box", None)
+            if r.get("matched_reference") is not None:
+                r["matched_reference"] = cfg["reference"][r["matched_reference"]]
+            frames.append({"t": round(t, 2), **r})
+        return {**identity.aggregate_frames(frames, thr.get("pass_at", identity.PASS_AT),
+                                            thr.get("review_at", identity.REVIEW_AT)),
+                "frames": frames, "reference_faces": dict(zip(cfg["reference"], counts)),
+                "thresholds": {"pass_at": thr.get("pass_at", identity.PASS_AT),
+                               "review_at": thr.get("review_at", identity.REVIEW_AT),
+                               "min_face": thr.get("min_face", identity.MIN_FACE)}}
+    except Exception as exc:  # the render is still good; report the check as not done
+        log.warning("identity check: %s", exc)
+        return {"verdict": "ERROR", "reason": f"identity check failed: {str(exc)[:300]}"}
+
+
 # --------------------------------------------------------------------------- heartbeat
 class Heartbeat(threading.Thread):
     def __init__(self, receipt, job_id):
@@ -395,6 +481,7 @@ def run_job(job, hb, tmp):
         raise RuntimeError(f"backend {spec['backend']} is not enabled on this worker (retried; a newer worker may have it)")
     job_id = job["job_id"]
     t_start = time.time()
+    tuning = spec.get("tuning") or {}
 
     prep_tool = Prep(tmp, backend.fps or 24, 15.0)
     prep = {"refs": [], "ref_videos": [], "ref_audios": [], "guides": [], "soundtrack": None}
@@ -414,7 +501,21 @@ def run_job(job, hb, tmp):
             prep["guides"].append(("image", prep_tool.image(key, "keyframe"), at))
     if spec.get("soundtrack"):
         prep["soundtrack"] = prep_tool.audio(spec["soundtrack"], "soundtrack")
+        frame_s = getattr(backend, "audio_frame_s", None)
+        if tuning.get("pad_audio") and frame_s:
+            prep["soundtrack"] = (pad_audio(prep["soundtrack"][0], prep["soundtrack"][1], frame_s, prep_tool),
+                                  prep["soundtrack"][1])
     hb.check()
+
+    prompt_info = None
+    if tuning.get("enhance_prompt"):
+        update_job(job_id, phase="rewriting the prompt")
+        spec["prompt"], prompt_info = prompting.enhance(spec, prep, backend.name, bool(tuning.get("keyframe_refs")))
+        if "error" not in prompt_info:
+            update_job(job_id, prompt_enhanced=spec["prompt"][:6000])
+        if spec.get("aspect") == "auto" and prompt_info.get("aspect"):
+            spec["aspect"] = prompt_info["aspect"]  # the expander picked the canvas (h3-image)
+        hb.check()
 
     if MODERATE:
         stills = [p for p in prep["refs"]] + [p for kind, p, _ in prep["guides"] if kind == "image"]
@@ -451,7 +552,9 @@ def run_job(job, hb, tmp):
         time.sleep(3)
     render_s = time.time() - t_render
     if getattr(backend, "kind", "video") == "audio":
-        return finish_audio(job, spec, backend, hist, tmp, render_s, t_start)
+        return finish_audio(job, spec, backend, hist, tmp, render_s, t_start, prep_tool.inputs, prompt_info)
+    if getattr(backend, "kind", "video") == "image":
+        return finish_image(job, spec, backend, hist, tmp, render_s, t_start, prep_tool.inputs, prompt_info)
 
     files = [f for out in hist["outputs"].values() for v in out.values() if isinstance(v, list)
              for f in v if isinstance(f, dict) and str(f.get("filename", "")).endswith((".mp4", ".webm", ".mov"))]
@@ -459,19 +562,15 @@ def run_job(job, hb, tmp):
         raise RuntimeError(f"no video in outputs: {json.dumps(hist['outputs'])[:800]}")
     f = files[0]
     q = urllib.parse.urlencode({"filename": f["filename"], "subfolder": f.get("subfolder", ""), "type": f.get("type", "output")})
-    raw = os.path.join(tmp, "raw.mp4")
+    raw = os.path.join(tmp, "raw" + os.path.splitext(f["filename"])[1])
     with open(raw, "wb") as fh:
-        fh.write(comfy_get(f"/view?{q}", timeout=600))
+        fh.write(comfy_get(f"/view?{q}", timeout=1800))
 
     update_job(job_id, phase="checking and packaging")
     st = spec.get("soundtrack") or {}
-    muxed = False
-    if prep["soundtrack"] and (st.get("keep_original", True) or not backend.native_audio):
-        mixed = os.path.join(tmp, "mux.mp4")
-        ms = int(round(float(st.get("at") or 0.0) * 1000))
-        ffmpeg("-i", raw, "-i", prep["soundtrack"][0], "-filter_complex", f"[1:a]adelay={ms}:all=1,apad[a]",
-               "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", mixed)
-        raw, muxed = mixed, True
+    muxed = bool(prep["soundtrack"] and (st.get("keep_original", True) or not backend.native_audio))
+    raw, finishing = finish_video(raw, tmp, tuning, prep["soundtrack"][0] if muxed else None,
+                                  float(st.get("at") or 0.0))
 
     moderation = {"enabled": MODERATE}
     if MODERATE:
@@ -482,6 +581,11 @@ def run_job(job, hb, tmp):
             s3.upload_file(raw, E["MEDIA_BUCKET"], qkey)
             raise JobError("the render failed the output content check (kept in quarantine for review)", "BLOCKED",
                            {"moderation": moderation, "quarantine_key": qkey})
+
+    ident = None
+    if spec.get("identity_check"):
+        update_job(job_id, phase="checking the character")
+        ident = check_identity_video(spec["identity_check"], raw, tmp)
 
     final = os.path.join(tmp, f"{job_id}.mp4")
     tags = {"comment": f"AI-generated by open-media-mcp {VERSION} ({backend.name}); job {job_id}",
@@ -501,13 +605,18 @@ def run_job(job, hb, tmp):
         "backend": {"name": backend.name, "license": backend.license, "notice": backend.notice,
                     "model": backend.model_file(spec)},
         "request": {k: v for k, v in spec.items() if k != "prompt"},
+        "recipe": spec.get("recipe"),
         "prompt_sha256": hashlib.sha256(spec["prompt"].encode()).hexdigest(),
+        "prompt_rewrite": ({**prompt_info, "rewritten_sha256": hashlib.sha256(spec["prompt"].encode()).hexdigest()}
+                           if prompt_info else None),
         "inputs": prep_tool.inputs,
         "render": {"comfyui_commit": open("/opt/media/comfyui_commit.txt").read().strip()
                    if os.path.exists("/opt/media/comfyui_commit.txt") else None,
-                   "frames": backend.frames(spec["seconds"]), "fps": backend.fps, "render_seconds": round(render_s, 1),
-                   "soundtrack_muxed": muxed, "worker": INSTANCE},
+                   "frames": backend.frames(spec["seconds"]), "fps": backend.output_fps(spec),
+                   "render_seconds": round(render_s, 1), "soundtrack_muxed": muxed, "finishing": finishing,
+                   "worker": INSTANCE},
         "moderation": moderation,
+        "identity": ident,
         "guardrail": job.get("guardrail"),
         "output": {"sha256": sha256(final), "bytes": os.path.getsize(final), "duration_s": round(dur, 3),
                    "has_audio": "audio" in kinds},
@@ -526,11 +635,12 @@ def run_job(job, hb, tmp):
                    "has_audio": "audio" in kinds, "sha256": manifest["output"]["sha256"]},
         "timings": {"render_s": round(render_s, 1), "total_s": round(time.time() - t_start, 1)},
         "moderation": moderation,
+        **({"identity": ident} if ident else {}),
         "cost": job_cost(time.time() - t_start),
     }
 
 
-def finish_audio(job, spec, backend, hist, tmp, render_s, t_start):
+def finish_audio(job, spec, backend, hist, tmp, render_s, t_start, inputs=(), prompt_info=None):
     """Audio backends: fetch ComfyUI's file, ship a lossless WAV + an MP3, tag both, write the manifest."""
     job_id = job["job_id"]
     files = [f for out in hist["outputs"].values() for v in out.values() if isinstance(v, list)
@@ -559,8 +669,11 @@ def finish_audio(job, spec, backend, hist, tmp, render_s, t_start):
         "caller": {"tenant": job.get("tenant"), "principal": job.get("principal")},
         "backend": {"name": backend.name, "license": backend.license, "notice": backend.notice, "model": backend.model_file(spec)},
         "request": {k: v for k, v in spec.items() if k != "prompt"},
+        "recipe": spec.get("recipe"),
         "prompt_sha256": hashlib.sha256(spec["prompt"].encode()).hexdigest(),
-        "inputs": [],
+        "prompt_rewrite": ({**prompt_info, "rewritten_sha256": hashlib.sha256(spec["prompt"].encode()).hexdigest()}
+                           if prompt_info else None),
+        "inputs": list(inputs),
         "render": {"comfyui_commit": open("/opt/media/comfyui_commit.txt").read().strip()
                    if os.path.exists("/opt/media/comfyui_commit.txt") else None,
                    "render_seconds": round(render_s, 1), "worker": INSTANCE},
@@ -579,6 +692,83 @@ def finish_audio(job, spec, backend, hist, tmp, render_s, t_start):
                    "duration_s": round(dur, 3), "has_audio": True, "sha256": manifest["output"]["sha256"]},
         "timings": {"render_s": round(render_s, 1), "total_s": round(time.time() - t_start, 1)},
         "moderation": {"enabled": False, "note": "audio output is not frame-checked"},
+        "cost": job_cost(time.time() - t_start),
+    }
+
+
+def finish_image(job, spec, backend, hist, tmp, render_s, t_start, inputs=(), prompt_info=None):
+    """Image backends: fetch each PNG ComfyUI saved (sampler order), content-check them if on, tag them, write the manifest."""
+    from PIL import Image, PngImagePlugin  # a ComfyUI requirement, so in this venv; only image jobs need it
+    job_id = job["job_id"]
+    files = [f for _, out in sorted(hist["outputs"].items()) for f in out.get("images", [])
+             if isinstance(f, dict) and str(f.get("filename", "")).endswith(".png")]
+    if not files:
+        raise RuntimeError(f"no image in outputs: {json.dumps(hist['outputs'])[:800]}")
+    raws = []
+    for i, f in enumerate(files, 1):
+        q = urllib.parse.urlencode({"filename": f["filename"], "subfolder": f.get("subfolder", ""), "type": f.get("type", "output")})
+        raws.append(os.path.join(tmp, f"raw_{i}.png"))
+        with open(raws[-1], "wb") as fh:
+            fh.write(comfy_get(f"/view?{q}", timeout=600))
+    update_job(job_id, phase="checking and packaging")
+
+    moderation = {"enabled": MODERATE}
+    if MODERATE:
+        hits = moderate_jpegs([to_jpeg(p, os.path.join(tmp, f"image_{i}.jpg")) for i, p in enumerate(raws, 1)])
+        moderation.update(images_checked=len(raws), hits=hits)
+        if hits:
+            qkey = f"quarantine/{job_id}/"
+            for i, p in enumerate(raws, 1):
+                s3.upload_file(p, E["MEDIA_BUCKET"], f"{qkey}{job_id}_{i}.png")
+            raise JobError("the render failed the output content check (kept in quarantine for review)", "BLOCKED",
+                           {"moderation": moderation, "quarantine_key": qkey})
+
+    tags = {"Comment": f"AI-generated by open-media-mcp {VERSION} ({backend.name}); job {job_id}",
+            "ai_generated": "true", "generator": f"open-media-mcp/{VERSION}", "backend": backend.name, "job_id": job_id}
+    if backend.notice:
+        tags["Copyright"] = backend.notice
+    base = f"outputs/{job_id}/"
+    images = []
+    for i, raw in enumerate(raws):
+        name = f"{job_id}.png" if len(raws) == 1 else f"{job_id}_{i + 1}.png"
+        path = os.path.join(tmp, name)
+        info = PngImagePlugin.PngInfo()
+        for k, v in {**tags, "seed": str(spec["seed"] + i)}.items():
+            info.add_text(k, v)
+        with Image.open(raw) as im:
+            im.save(path, pnginfo=info)
+            w, h = im.size
+        images.append({"key": base + name, "path": path, "seed": spec["seed"] + i, "width": w, "height": h,
+                       "sha256": sha256(path), "bytes": os.path.getsize(path)})
+    manifest = {
+        "schema": "open-media-mcp/provenance/v1",
+        "job_id": job_id, "created_at": job["created_at"], "completed_at": now(),
+        "caller": {"tenant": job.get("tenant"), "principal": job.get("principal")},
+        "backend": {"name": backend.name, "license": backend.license, "notice": backend.notice, "model": backend.model_file(spec)},
+        "request": {k: v for k, v in spec.items() if k != "prompt"},
+        "recipe": spec.get("recipe"),
+        "prompt_sha256": hashlib.sha256(spec["prompt"].encode()).hexdigest(),
+        "prompt_rewrite": ({**prompt_info, "rewritten_sha256": hashlib.sha256(spec["prompt"].encode()).hexdigest()}
+                           if prompt_info else None),
+        "inputs": list(inputs),
+        "render": {"comfyui_commit": open("/opt/media/comfyui_commit.txt").read().strip()
+                   if os.path.exists("/opt/media/comfyui_commit.txt") else None,
+                   "render_seconds": round(render_s, 1), "worker": INSTANCE},
+        "moderation": moderation,
+        "guardrail": job.get("guardrail"),
+        "output": {"images": [{k: v for k, v in im.items() if k != "path"} for im in images]},
+    }
+    mpath = os.path.join(tmp, "manifest.json")
+    with open(mpath, "w") as fh:
+        json.dump(manifest, fh, indent=1, default=str)
+    for im in images:
+        s3.upload_file(im["path"], E["MEDIA_BUCKET"], im["key"], ExtraArgs={"ContentType": "image/png"})
+    s3.upload_file(mpath, E["MEDIA_BUCKET"], base + "manifest.json", ExtraArgs={"ContentType": "application/json"})
+    return {
+        "output": {"images": [{k: im[k] for k in ("key", "seed", "width", "height", "sha256")} for im in images],
+                   "manifest_key": base + "manifest.json"},
+        "timings": {"render_s": round(render_s, 1), "total_s": round(time.time() - t_start, 1)},
+        "moderation": moderation,
         "cost": job_cost(time.time() - t_start),
     }
 

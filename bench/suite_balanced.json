@@ -1,0 +1,79 @@
+{
+ "description": "wave 3: wan balanced tier, same ids as the full cases so they line up side by side",
+ "cases": [
+  {
+   "id": "wan_skate_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "balanced",
+   "seed": 101
+  },
+  {
+   "id": "wan_skate_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "balanced",
+   "seed": 202
+  },
+  {
+   "id": "wan_fisher_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "balanced",
+   "seed": 101
+  },
+  {
+   "id": "wan_fisher_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "balanced",
+   "seed": 202
+  },
+  {
+   "id": "wan_drone_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "balanced",
+   "seed": 101
+  },
+  {
+   "id": "wan_drone_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "balanced",
+   "seed": 202
+  },
+  {
+   "id": "wan_swing_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "balanced",
+   "seed": 101
+  },
+  {
+   "id": "wan_swing_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "balanced",
+   "seed": 202
+  }
+ ]
+}

@@ -14,5 +14,5 @@ if (fs.existsSync(local)) {
 }
 new OpenMediaMcpStack(app, app.node.tryGetContext("media:stackName") ?? "OpenMediaMcp", {
   env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
-  description: "open-media-mcp: open-weight video and audio generation as MCP tools on Amazon Bedrock AgentCore Gateway",
+  description: "open-media-mcp: open-weight video, audio and image generation as MCP tools on Amazon Bedrock AgentCore Gateway",
 });

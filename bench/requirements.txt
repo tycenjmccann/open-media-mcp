@@ -1,0 +1,10 @@
+# bench/.venv only (not Homebrew's numpy: wrong audio math on py3.14)
+numpy<2.3
+opencv-python-headless>=4.9
+boto3>=1.35
+faster-whisper>=1.0
+imageio-ffmpeg>=0.5
+# run.py -> examples/mcp_client.py
+mcp>=1.9
+httpx
+botocore

@@ -42,7 +42,11 @@ export HOME=/root
 curl -LsSf https://astral.sh/uv/install.sh | sh
 UV=/root/.local/bin/uv
 cd /opt/media
-[ -d ComfyUI ] || git clone --depth 1 --branch "${MEDIA_COMFYUI_REF:-master}" https://github.com/comfyanonymous/ComfyUI.git
+# MEDIA_COMFYUI_REF may be a branch, a tag or a commit sha, so fetch it rather than `clone --branch`.
+if [ ! -d ComfyUI ]; then
+  git init -q ComfyUI && git -C ComfyUI remote add origin https://github.com/comfyanonymous/ComfyUI.git
+  git -C ComfyUI fetch -q --depth 1 origin "${MEDIA_COMFYUI_REF:-master}" && git -C ComfyUI checkout -q FETCH_HEAD
+fi
 git -C ComfyUI rev-parse HEAD > /opt/media/comfyui_commit.txt
 $UV venv --python 3.12 /opt/media/venv
 export VIRTUAL_ENV=/opt/media/venv
@@ -57,6 +61,23 @@ DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1 | cu
 CU=cu130; [ "$DRV" -lt 580 ] && CU=cu128
 $UV pip install torch torchvision torchaudio --index-url "https://download.pytorch.org/whl/$CU"
 $UV pip install -r ComfyUI/requirements.txt
+
+# MiniMax's prompt-writing guides for the enhance_prompt knob (MiniMax H3 Community License, so fetched, not vendored).
+if [[ ",$MEDIA_BACKENDS," == *",h3,"* ]]; then
+  mkdir -p /opt/media/prompts
+  for f in base-en.txt ref-en.txt; do
+    curl -sfL "https://raw.githubusercontent.com/MiniMax-AI/MiniMax-H3/${MEDIA_H3_GUIDE_REF:-main}/skills/h3-prompt-writing/references/$f" \
+      -o "/opt/media/prompts/$f" || echo "warning: could not fetch H3 prompt guide $f"
+  done
+fi
+# MiniMax-H3-Image-PE's expansion instructions (same reason: MiniMax-H3-Image Community License).
+if [[ ",$MEDIA_BACKENDS," == *",h3-image,"* ]]; then
+  mkdir -p /opt/media/prompts
+  for f in t2i/system_prompt.txt t2i/task_prompt.txt edit/task_prompt.txt; do
+    curl -sfL "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image-PE/resolve/${MEDIA_H3_IMAGE_PE_REF:-main}/prompt/$f" \
+      -o "/opt/media/prompts/h3image_${f//\//_}" || echo "warning: could not fetch H3-Image PE prompt $f"
+  done
+fi
 
 status "fetching models"
 wait $MODELS_PID || { cat /var/log/media-models.log; false; }

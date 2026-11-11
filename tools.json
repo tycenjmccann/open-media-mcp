@@ -1,7 +1,7 @@
 [
   {
     "name": "get_capabilities",
-    "description": "Call this first. Returns what the video model accepts (aspects, length limits, reference and keyframe limits, quality modes), the prompt tag syntax (<Picture N>, <Video N>, <Audio N>), render-time estimates, guardrail settings, and whether a GPU worker is up right now.",
+    "description": "Call this first. Returns what each enabled video, audio and image backend accepts (aspects, length limits, reference and keyframe limits, quality modes), the prompt tag syntax (<Picture N>, <Video N>, <Audio N>), render-time estimates, guardrail settings, and whether a GPU worker is up right now.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -30,7 +30,7 @@
   },
   {
     "name": "generate_video",
-    "description": "Queue one video generation and return a job_id immediately (renders take minutes; get_capabilities has estimates). Poll get_job until status is SUCCEEDED, FAILED, BLOCKED or CANCELLED. With backend h3 the model makes picture and sound in one pass: put any sung or spoken line in the prompt in quotes, whole. Reference media are tagged in the prompt in upload order: refs -> <Picture 1..n>, then first_frame/keyframes/last_frame continue the <Picture> numbering; ref_videos -> <Video n>; ref_audios -> <Audio n>. On h3 a soundtrack makes the character lip-sync to real audio; on wan2.2 it is muxed onto the silent render.",
+    "description": "Queue one video generation and return a job_id immediately (renders take minutes; get_capabilities has estimates). Poll get_job until status is SUCCEEDED, FAILED, BLOCKED or CANCELLED. With backend h3 the model makes picture and sound in one pass: put any sung or spoken line in the prompt in quotes, whole. Reference media are tagged in the prompt in upload order: refs -> <Picture 1..n>, then first_frame/keyframes/last_frame continue the <Picture> numbering; ref_videos -> <Video n>; ref_audios -> <Audio n>. On h3 a soundtrack makes the character lip-sync to real audio; on wan2.2 it is muxed onto the silent render. Add identity_check to have the clip checked against the character's reference images.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -52,7 +52,7 @@
         },
         "quality": {
           "type": "string",
-          "description": "full (default, 20 steps, best lip-sync and detail), draft8 or draft4 (turbo LoRA, 2-4x faster, weaker on wide shots)."
+          "description": "full (default, best detail and lip-sync), balanced (wan2.2 only: a few full-strength steps, then the 4-step LoRA; real motion at about a quarter of full's time), draft8 or draft4 (turbo LoRAs, fastest)."
         },
         "model": {
           "type": "string",
@@ -189,6 +189,49 @@
         "negative_prompt": {
           "type": "string",
           "description": "What to avoid (wan2.2). A sensible default is applied."
+        },
+        "recipe": {
+          "type": "string",
+          "description": "Pin a named render recipe (frozen sampler, LoRA, prompt-rewrite and finishing settings) for reproducible output, e.g. r0 (original), r1, r2. get_capabilities lists each backend's recipes and default."
+        },
+        "tuning": {
+          "type": "object",
+          "description": "Advanced: override single recipe knobs for an experiment, e.g. {\"steps\": 50} or {\"interpolate\": 2}. get_capabilities lists the knobs and allowed values.",
+          "additionalProperties": true
+        },
+        "identity_check": {
+          "type": "object",
+          "description": "Check the finished clip is still the same character: Amazon Rekognition compares the faces in 8 evenly spaced frames with the reference images. Pass {} to use refs, or give reference. get_job returns identity: PASS (every clear frame matches), FAIL (a clear frame shows a different face, e.g. a hidden cut), or REVIEW (close call, or no clear face), with per-frame scores. The job still succeeds either way.",
+          "properties": {
+            "reference": {
+              "type": "array",
+              "description": "1-5 reference images: the character sheet and/or approved images. Default: refs.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "Key returned by create_upload."
+                  }
+                },
+                "required": [
+                  "key"
+                ]
+              }
+            },
+            "pass_at": {
+              "type": "number",
+              "description": "Score needed to PASS on a clear face. Default 97 (calibrated)."
+            },
+            "review_at": {
+              "type": "number",
+              "description": "Below this on a clear face is a FAIL; between review_at and pass_at is REVIEW. Default 90."
+            },
+            "min_face": {
+              "type": "number",
+              "description": "Faces shorter than this many pixels go to REVIEW: the score is unreliable there. Default 100."
+            }
+          }
         }
       },
       "required": [
@@ -241,8 +284,129 @@
     }
   },
   {
+    "name": "generate_image",
+    "description": "Queue one image job and return a job_id immediately; poll get_job for image_url (and images, one entry per image when count > 1). Backends: qwen-image (default; Qwen-Image text to PNG, about 1.6 MP, about 30 s warm, strong at lettering) and h3-image (MiniMax-H3-Image: about 16 MP photoreal or illustrated text-to-image, or an edit of up to 16 reference images; 6 steps, no CFG, no negative prompt). For h3-image name references in the prompt as <Picture 1> ... <Picture 16> in refs order (<Picture 1> is the image to edit); a short prompt is expanded server-side into the detailed caption the model expects (tuning.enhance_prompt, on by default), which also picks the canvas when aspect is auto. Describe subject, setting, light, lens and style; put any text that must appear in the image in quotes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "What to draw, e.g. 'Rainy Tokyo side street at night, neon sign reading OPEN, 35mm photo, shallow depth of field'."
+        },
+        "aspect": {
+          "type": "string",
+          "description": "qwen-image: 16:9 (default, 1664x928), 9:16, 1:1 (1328x1328), 4:3 or 3:4. h3-image: auto (default: the expander picks, else the edited image's ratio, else 1:1), 1:1, 16:9, 9:16, 4:5, 5:4, 4:3, 3:4, 3:2, 2:3, 21:9."
+        },
+        "count": {
+          "type": "integer",
+          "description": "Images from this prompt, 1-4. Default 1. Image i uses seed + i, so any one re-renders alone with count 1."
+        },
+        "quality": {
+          "type": "string",
+          "description": "h3-image: full (default, about 16 MP) or draft (about 4 MP, faster)."
+        },
+        "refs": {
+          "type": "array",
+          "description": "h3-image: up to 16 reference images, each {key} from create_upload; <Picture N> in the prompt is refs[N-1] and <Picture 1> is the image to edit.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key"
+            ]
+          }
+        },
+        "tuning": {
+          "type": "object",
+          "description": "h3-image: {enhance_prompt: false} sends your prompt to the model unchanged (write a full, detailed English caption).",
+          "additionalProperties": true
+        },
+        "steps": {
+          "type": "integer",
+          "description": "qwen-image only: sampling steps, 10-50. Default 30. (h3-image is fixed at 6.)"
+        },
+        "cfg": {
+          "type": "number",
+          "description": "qwen-image only: prompt guidance, 1-10. Default 3.0. (h3-image is fixed at 1.)"
+        },
+        "negative_prompt": {
+          "type": "string",
+          "description": "qwen-image only: what to avoid. Default 'blurry, lowres, deformed, watermark'."
+        },
+        "backend": {
+          "type": "string",
+          "description": "qwen-image (default) or h3-image."
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Fix for a repeatable image."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Retries with the same key return the same job."
+        },
+        "labels": {
+          "type": "object",
+          "description": "Free-form string labels for cost_report (project, cost_center)."
+        }
+      },
+      "required": [
+        "prompt"
+      ]
+    }
+  },
+  {
+    "name": "check_identity",
+    "description": "Is this image the same character as the reference images? Answers in a few seconds, no GPU. Amazon Rekognition compares every face on the references (each panel of a character sheet, plus approved images) with the faces in the image and keeps the best match, 0-100. verdict: PASS (>= pass_at on a clear face), FAIL (under review_at on a clear face), or REVIEW (in between, or the face is too small or covered to judge, where scores are unreliable either way: have a person look). Upload both with create_upload first. Calibrated on AI characters and look-alikes with the same hair, makeup and outfits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "type": "array",
+          "description": "1-5 reference images of the character: the character sheet and/or approved images.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "Key returned by create_upload."
+              }
+            },
+            "required": [
+              "key"
+            ]
+          }
+        },
+        "image": {
+          "type": "string",
+          "description": "Key (from create_upload) of the PNG, JPEG or WebP image to check."
+        },
+        "pass_at": {
+          "type": "number",
+          "description": "Score needed to PASS on a clear face. Default 97 (calibrated)."
+        },
+        "review_at": {
+          "type": "number",
+          "description": "Below this on a clear face is a FAIL; between review_at and pass_at is REVIEW. Default 90."
+        },
+        "min_face": {
+          "type": "number",
+          "description": "Faces shorter than this many pixels go to REVIEW: the score is unreliable there. Default 100."
+        }
+      },
+      "required": [
+        "reference",
+        "image"
+      ]
+    }
+  },
+  {
     "name": "get_job",
-    "description": "Status of one job: QUEUED, STARTING, RUNNING, SUCCEEDED, FAILED, BLOCKED (failed a content check) or CANCELLED, plus phase, timings, and on success presigned URLs for the mp4, a poster frame and the provenance manifest (valid for 1 hour by default; call again for fresh URLs).",
+    "description": "Status of one job: QUEUED, STARTING, RUNNING, SUCCEEDED, FAILED, BLOCKED (failed a content check) or CANCELLED, plus phase, timings, and on success presigned URLs for the mp4 and a poster frame (audio jobs: audio_url and mp3_url; image jobs: image_url and images), plus the provenance manifest (valid for 1 hour by default; call again for fresh URLs). Jobs submitted with identity_check also return identity (verdict, reason, per-frame scores).",
     "inputSchema": {
       "type": "object",
       "properties": {

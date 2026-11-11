@@ -1,7 +1,10 @@
+import { execFileSync } from "child_process";
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import {
   Annotations,
+  AssetHashType,
   Aws,
   CfnOutput,
   Duration,
@@ -32,7 +35,10 @@ import { Construct } from "constructs";
 
 const ROOT = path.join(__dirname, "..");
 const METRIC_NAMESPACE = "OpenMediaMcp";
-const KNOWN_BACKENDS = ["wan2.2", "h3", "stable-audio-3"];
+const KNOWN_BACKENDS = ["wan2.2", "h3", "stable-audio-3", "qwen-image", "h3-image"];
+const COMFYUI_PIN = "0228a9d73cd7c2daf8f61fe13d56b12efe307171"; // master 2026-11-10 (first with MiniMax-H3-Image)
+const H3_GUIDE_PIN = "199b7d0e1fd95e7b3eafa8c15eca692534142427"; // MiniMax-AI/MiniMax-H3 main 2026-10-28
+const H3_IMAGE_PE_PIN = "35603d4b63949afa12cb098227fffefedf081afa"; // MiniMaxAI/MiniMax-H3-Image-PE main 2026-11-10
 
 /** Every knob is a `-c media:<key>=<value>` context value (defaults in cdk.json). */
 class Config {
@@ -219,6 +225,7 @@ export class OpenMediaMcpStack extends Stack {
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: RemovalPolicy.DESTROY,
     });
+    const promptModel = cfg.str("promptModel", "us.anthropic.claude-sonnet-5-5");
     const workerRole = new iam.Role(this, "WorkerRole", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
       description: "open-media-mcp GPU worker",
@@ -236,7 +243,18 @@ export class OpenMediaMcpStack extends Stack {
         resources: [`arn:${Aws.PARTITION}:s3:::${modelCacheBucket}`, `arn:${Aws.PARTITION}:s3:::${modelCacheBucket}/models/*`],
       }));
     }
-    workerRole.addToPolicy(new iam.PolicyStatement({ actions: ["rekognition:DetectModerationLabels"], resources: ["*"] }));
+    workerRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["rekognition:DetectModerationLabels", "rekognition:DetectFaces", "rekognition:CompareFaces"],
+      resources: ["*"],
+    }));
+    // Prompt rewrite (recipe knob enhance_prompt): a cross-region inference profile plus the models it routes to.
+    workerRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+      resources: [
+        `arn:${Aws.PARTITION}:bedrock:${Aws.REGION}:${Aws.ACCOUNT_ID}:inference-profile/${promptModel}`,
+        `arn:${Aws.PARTITION}:bedrock:*::foundation-model/*`,
+      ],
+    }));
     // Per-job cost: the live price of the instance the job ran on.
     workerRole.addToPolicy(new iam.PolicyStatement({ actions: ["ec2:DescribeSpotPriceHistory", "pricing:GetProducts"], resources: ["*"] }));
     workerRole.addToPolicy(new iam.PolicyStatement({
@@ -264,7 +282,10 @@ export class OpenMediaMcpStack extends Stack {
     }
 
     new s3deploy.BucketDeployment(this, "WorkerCode", {
-      sources: [s3deploy.Source.asset(path.join(ROOT, "worker"), { exclude: ["__pycache__", "*.pyc"] })],
+      sources: [
+        s3deploy.Source.asset(path.join(ROOT, "worker"), { exclude: ["__pycache__", "*.pyc"] }),
+        s3deploy.Source.asset(path.join(ROOT, "shared"), { exclude: ["__pycache__", "*.pyc"] }),
+      ],
       destinationBucket: bucket,
       destinationKeyPrefix: "bootstrap/",
       memoryLimit: 512,
@@ -285,7 +306,13 @@ export class OpenMediaMcpStack extends Stack {
       MEDIA_HF_TOKEN_SECRET: hfSecret,
       MEDIA_METRIC_NAMESPACE: METRIC_NAMESPACE,
       MEDIA_JOB_RETENTION_DAYS: String(cfg.num("jobRetentionDays", 90)),
-      MEDIA_COMFYUI_REF: cfg.str("comfyuiRef", "master"),
+      // A tested ComfyUI commit: master moves daily and has shipped H3 regressions. Override with any branch, tag or sha.
+      MEDIA_COMFYUI_REF: cfg.str("comfyuiRef", COMFYUI_PIN),
+      // MiniMax's h3-prompt-writing guides (for enhance_prompt), fetched at boot from their repo at this commit.
+      MEDIA_H3_GUIDE_REF: cfg.str("h3GuideRef", H3_GUIDE_PIN),
+      // MiniMax-H3-Image-PE's prompt-expansion instructions (h3-image enhance_prompt), fetched at boot at this revision.
+      MEDIA_H3_IMAGE_PE_REF: cfg.str("h3ImagePeRef", H3_IMAGE_PE_PIN),
+      MEDIA_PROMPT_MODEL: promptModel,
       AWS_DEFAULT_REGION: Aws.REGION,
     };
     const userData = ec2.UserData.forLinux();
@@ -329,7 +356,8 @@ export class OpenMediaMcpStack extends Stack {
         launchTemplateOverrides: instanceTypes.map((t) => ({ instanceType: new ec2.InstanceType(t) })),
         instancesDistribution: {
           onDemandBaseCapacity: 0,
-          onDemandPercentageAboveBaseCapacity: cfg.bool("onDemand", false) ? 100 : 0,
+          // onDemandPercent > 0 mixes on-demand into the fleet when spot quota or capacity is the ceiling.
+          onDemandPercentageAboveBaseCapacity: cfg.bool("onDemand", false) ? 100 : cfg.num("onDemandPercent", 0),
           onDemandAllocationStrategy: autoscaling.OnDemandAllocationStrategy.PRIORITIZED,
           spotAllocationStrategy: autoscaling.SpotAllocationStrategy.CAPACITY_OPTIMIZED_PRIORITIZED,
         },
@@ -346,9 +374,9 @@ export class OpenMediaMcpStack extends Stack {
       runtime: lambda.Runtime.PYTHON_3_13,
       architecture: lambda.Architecture.ARM_64,
       handler: "handler.lambda_handler",
-      code: lambda.Code.fromAsset(path.join(ROOT, "lambda/tools")),
+      code: toolsCode(),
       timeout: Duration.seconds(30),
-      memorySize: 256,
+      memorySize: 512,
       description: "open-media-mcp MCP tools (AgentCore Gateway Lambda target)",
       logGroup: new logs.LogGroup(this, "ToolsLogs", { retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: RemovalPolicy.DESTROY }),
       environment: {
@@ -370,6 +398,9 @@ export class OpenMediaMcpStack extends Stack {
       },
     });
     table.grantReadWriteData(toolsFn);
+    toolsFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["rekognition:DetectFaces", "rekognition:CompareFaces"], resources: ["*"],
+    }));
     queue.grantSendMessages(toolsFn);
     queue.grant(toolsFn, "sqs:GetQueueAttributes");
     bucket.grantPut(toolsFn, "inputs/*");
@@ -531,4 +562,39 @@ function toCfnSchema(s: any): agentcore.CfnGatewayTarget.SchemaDefinitionPropert
   if (s.required) out.required = s.required;
   if (s.items) out.items = toCfnSchema(s.items);
   return out;
+}
+
+
+const PILLOW = "12.2.0";
+
+/** lambda/tools plus shared/identity.py and Pillow (for check_identity's face crops), built with the local pip. */
+function toolsCode(): lambda.Code {
+  const src = path.join(ROOT, "lambda/tools");
+  const files = [...fs.readdirSync(src).filter((f) => f.endsWith(".py") || f.endsWith(".json")).map((f) => path.join(src, f)),
+    path.join(ROOT, "shared/identity.py")];
+  const hash = crypto.createHash("sha256").update(PILLOW);
+  for (const f of files.sort()) hash.update(path.basename(f)).update(fs.readFileSync(f));
+  return lambda.Code.fromAsset(src, {
+    assetHashType: AssetHashType.CUSTOM,
+    assetHash: hash.digest("hex"),
+    bundling: {
+      image: lambda.Runtime.PYTHON_3_13.bundlingImage,
+      local: {
+        tryBundle(out: string) {
+          for (const f of files) fs.copyFileSync(f, path.join(out, path.basename(f)));
+          const args = ["-m", "pip", "install", "--quiet", "--platform", "manylinux2014_aarch64", "--implementation", "cp",
+            "--python-version", "3.13", "--only-binary=:all:", "--target", out, `pillow==${PILLOW}`];
+          for (const py of ["python3", "python"]) {
+            try {
+              execFileSync(py, args, { stdio: "inherit" });
+              return true;
+            } catch {
+              // try the next interpreter
+            }
+          }
+          throw new Error("bundling the tools Lambda needs python3 with pip on the PATH (it installs Pillow for linux arm64)");
+        },
+      },
+    },
+  });
 }

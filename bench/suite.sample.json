@@ -1,0 +1,13 @@
+{"cases": [
+ {"id": "wan_fox_t2v_full_s7", "backend": "wan2.2", "quality": "full", "seed": 7, "aspect": "16:9", "seconds": 5, "expect_speech": null,
+  "prompt": "A red fox trots through fresh snow in a birch forest at sunrise, breath steaming in the cold air, the camera tracking alongside at its eye level."},
+ {"id": "wan_fox_i2v_draft4_s5", "backend": "wan2.2", "quality": "draft4", "seed": 5, "aspect": "16:9", "seconds": 5, "expect_speech": null,
+  "first_frame": "docs/media/fox_full.jpg",
+  "prompt": "The fox stops in the snow, lifts its head and turns to look straight into the camera, ears twitching, soft wind moving its fur."},
+ {"id": "h3_fox_talk_full_s9", "backend": "h3", "quality": "full", "seed": 9, "aspect": "16:9", "seconds": 5,
+  "refs": [{"key": "docs/media/fox_full.jpg"}], "keyframes": [{"key": "docs/media/fox_draft4.jpg", "at": -1}],
+  "prompt": "A red fox sits in the snow and speaks to the camera in a calm, warm voice: \"Stay close, winter is long this year.\"",
+  "expect_speech": "Stay close, winter is long this year."},
+ {"id": "sa3_lofi_s4", "backend": "stable-audio-3", "seed": 4, "seconds": 20, "expect_speech": null,
+  "prompt": "Warm lo-fi hip hop beat, dusty vinyl drums, mellow Rhodes chords, 82 BPM"}
+]}

@@ -26,5 +26,7 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: "111111111111"
           CDK_DEFAULT_REGION: us-east-1
-      - run: pip install pytest boto3
+      - run: pip install pytest boto3 pillow ruff
+      # worker.py needs a GPU box to import, so undefined names there are only caught by the linter
+      - run: ruff check --select F,E9 worker lambda shared tests
       - run: python -m pytest -q tests

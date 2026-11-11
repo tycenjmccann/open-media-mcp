@@ -1,0 +1,539 @@
+{
+ "description": "open-media-mcp quality bench: 8 prompts x 3 qualities x 2 seeds. Assets live in out/bench/assets (not in the repo).",
+ "cases": [
+  {
+   "id": "wan_skate_draft4_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "wan_skate_draft4_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "wan_skate_draft8_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "wan_skate_draft8_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "wan_skate_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "wan_skate_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "A skateboarder kickflips down a flight of concrete stairs in a sunny city plaza, lands cleanly and rolls away, the camera tracking alongside at knee height.",
+   "quality": "full",
+   "seed": 202
+  },
+  {
+   "id": "wan_fisher_draft4_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "wan_fisher_draft4_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "wan_fisher_draft8_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "wan_fisher_draft8_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "wan_fisher_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "wan_fisher_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Close-up of an elderly fisherman mending a net on a wooden dock at golden hour; his weathered hands pull the twine tight, then he looks up and laughs.",
+   "quality": "full",
+   "seed": 202
+  },
+  {
+   "id": "wan_drone_draft4_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "wan_drone_draft4_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "wan_drone_draft8_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "wan_drone_draft8_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "wan_drone_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "wan_drone_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "prompt": "Aerial drone shot gliding low over a misty pine forest at sunrise toward a still mountain lake, birds lifting off the treetops.",
+   "quality": "full",
+   "seed": 202
+  },
+  {
+   "id": "wan_swing_draft4_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "wan_swing_draft4_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "wan_swing_draft8_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "wan_swing_draft8_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "wan_swing_full_s1",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "wan_swing_full_s2",
+   "backend": "wan2.2",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/backyard.png",
+   "prompt": "The mother pushes the swing and the little girl swings high, laughing, while the father tosses the ball to the boy, who catches it.",
+   "quality": "full",
+   "seed": 202
+  },
+  {
+   "id": "h3_chef_draft4_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "expect_speech": "Best noodles in town, come and get it!",
+   "prompt": "A street chef at a busy night market tosses noodles in a flaming wok, then grins at the camera and shouts \"Best noodles in town, come and get it!\"",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "h3_chef_draft4_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "expect_speech": "Best noodles in town, come and get it!",
+   "prompt": "A street chef at a busy night market tosses noodles in a flaming wok, then grins at the camera and shouts \"Best noodles in town, come and get it!\"",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "h3_chef_draft8_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "expect_speech": "Best noodles in town, come and get it!",
+   "prompt": "A street chef at a busy night market tosses noodles in a flaming wok, then grins at the camera and shouts \"Best noodles in town, come and get it!\"",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "h3_chef_draft8_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "expect_speech": "Best noodles in town, come and get it!",
+   "prompt": "A street chef at a busy night market tosses noodles in a flaming wok, then grins at the camera and shouts \"Best noodles in town, come and get it!\"",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "h3_chef_full_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "expect_speech": "Best noodles in town, come and get it!",
+   "prompt": "A street chef at a busy night market tosses noodles in a flaming wok, then grins at the camera and shouts \"Best noodles in town, come and get it!\"",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "h3_chef_full_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "expect_speech": "Best noodles in town, come and get it!",
+   "prompt": "A street chef at a busy night market tosses noodles in a flaming wok, then grins at the camera and shouts \"Best noodles in town, come and get it!\"",
+   "quality": "full",
+   "seed": 202
+  },
+  {
+   "id": "h3_claudia_draft4_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5.17,
+   "refs": [
+    "out/bench/assets/claudia_ref.png",
+    "out/bench/assets/venue_hill.png"
+   ],
+   "soundtrack": {
+    "key": "out/bench/assets/claudia_line.wav",
+    "at": 0.0,
+    "keep_original": true
+   },
+   "prompt": "<Picture 1> sings on the hilltop stage from <Picture 2> under the full moon, looking into the camera: \"I paint on my freckles, I fix up my hair\"",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "h3_claudia_draft4_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5.17,
+   "refs": [
+    "out/bench/assets/claudia_ref.png",
+    "out/bench/assets/venue_hill.png"
+   ],
+   "soundtrack": {
+    "key": "out/bench/assets/claudia_line.wav",
+    "at": 0.0,
+    "keep_original": true
+   },
+   "prompt": "<Picture 1> sings on the hilltop stage from <Picture 2> under the full moon, looking into the camera: \"I paint on my freckles, I fix up my hair\"",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "h3_claudia_draft8_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5.17,
+   "refs": [
+    "out/bench/assets/claudia_ref.png",
+    "out/bench/assets/venue_hill.png"
+   ],
+   "soundtrack": {
+    "key": "out/bench/assets/claudia_line.wav",
+    "at": 0.0,
+    "keep_original": true
+   },
+   "prompt": "<Picture 1> sings on the hilltop stage from <Picture 2> under the full moon, looking into the camera: \"I paint on my freckles, I fix up my hair\"",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "h3_claudia_draft8_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5.17,
+   "refs": [
+    "out/bench/assets/claudia_ref.png",
+    "out/bench/assets/venue_hill.png"
+   ],
+   "soundtrack": {
+    "key": "out/bench/assets/claudia_line.wav",
+    "at": 0.0,
+    "keep_original": true
+   },
+   "prompt": "<Picture 1> sings on the hilltop stage from <Picture 2> under the full moon, looking into the camera: \"I paint on my freckles, I fix up my hair\"",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "h3_claudia_full_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5.17,
+   "refs": [
+    "out/bench/assets/claudia_ref.png",
+    "out/bench/assets/venue_hill.png"
+   ],
+   "soundtrack": {
+    "key": "out/bench/assets/claudia_line.wav",
+    "at": 0.0,
+    "keep_original": true
+   },
+   "prompt": "<Picture 1> sings on the hilltop stage from <Picture 2> under the full moon, looking into the camera: \"I paint on my freckles, I fix up my hair\"",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "h3_claudia_full_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5.17,
+   "refs": [
+    "out/bench/assets/claudia_ref.png",
+    "out/bench/assets/venue_hill.png"
+   ],
+   "soundtrack": {
+    "key": "out/bench/assets/claudia_line.wav",
+    "at": 0.0,
+    "keep_original": true
+   },
+   "prompt": "<Picture 1> sings on the hilltop stage from <Picture 2> under the full moon, looking into the camera: \"I paint on my freckles, I fix up my hair\"",
+   "quality": "full",
+   "seed": 202
+  },
+  {
+   "id": "h3_maya_draft4_s1",
+   "backend": "h3",
+   "aspect": "9:16",
+   "seconds": 5,
+   "refs": [
+    "out/bench/assets/jess_ref.png"
+   ],
+   "expect_speech": "I think we finally cracked it.",
+   "prompt": "<Picture 1> sits in a sunlit cafe with a laptop, looks up at the camera with a tired smile and says \"I think we finally cracked it.\"",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "h3_maya_draft4_s2",
+   "backend": "h3",
+   "aspect": "9:16",
+   "seconds": 5,
+   "refs": [
+    "out/bench/assets/jess_ref.png"
+   ],
+   "expect_speech": "I think we finally cracked it.",
+   "prompt": "<Picture 1> sits in a sunlit cafe with a laptop, looks up at the camera with a tired smile and says \"I think we finally cracked it.\"",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "h3_maya_draft8_s1",
+   "backend": "h3",
+   "aspect": "9:16",
+   "seconds": 5,
+   "refs": [
+    "out/bench/assets/jess_ref.png"
+   ],
+   "expect_speech": "I think we finally cracked it.",
+   "prompt": "<Picture 1> sits in a sunlit cafe with a laptop, looks up at the camera with a tired smile and says \"I think we finally cracked it.\"",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "h3_maya_draft8_s2",
+   "backend": "h3",
+   "aspect": "9:16",
+   "seconds": 5,
+   "refs": [
+    "out/bench/assets/jess_ref.png"
+   ],
+   "expect_speech": "I think we finally cracked it.",
+   "prompt": "<Picture 1> sits in a sunlit cafe with a laptop, looks up at the camera with a tired smile and says \"I think we finally cracked it.\"",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "h3_maya_full_s1",
+   "backend": "h3",
+   "aspect": "9:16",
+   "seconds": 5,
+   "refs": [
+    "out/bench/assets/jess_ref.png"
+   ],
+   "expect_speech": "I think we finally cracked it.",
+   "prompt": "<Picture 1> sits in a sunlit cafe with a laptop, looks up at the camera with a tired smile and says \"I think we finally cracked it.\"",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "h3_maya_full_s2",
+   "backend": "h3",
+   "aspect": "9:16",
+   "seconds": 5,
+   "refs": [
+    "out/bench/assets/jess_ref.png"
+   ],
+   "expect_speech": "I think we finally cracked it.",
+   "prompt": "<Picture 1> sits in a sunlit cafe with a laptop, looks up at the camera with a tired smile and says \"I think we finally cracked it.\"",
+   "quality": "full",
+   "seed": 202
+  },
+  {
+   "id": "h3_ring_draft4_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/table.png",
+   "expect_speech": "I'm not taking it back.",
+   "prompt": "The woman in <Picture 1> slides the ring off her finger, sets it on the table, looks up toward the window and says quietly \"I'm not taking it back.\"",
+   "quality": "draft4",
+   "seed": 101
+  },
+  {
+   "id": "h3_ring_draft4_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/table.png",
+   "expect_speech": "I'm not taking it back.",
+   "prompt": "The woman in <Picture 1> slides the ring off her finger, sets it on the table, looks up toward the window and says quietly \"I'm not taking it back.\"",
+   "quality": "draft4",
+   "seed": 202
+  },
+  {
+   "id": "h3_ring_draft8_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/table.png",
+   "expect_speech": "I'm not taking it back.",
+   "prompt": "The woman in <Picture 1> slides the ring off her finger, sets it on the table, looks up toward the window and says quietly \"I'm not taking it back.\"",
+   "quality": "draft8",
+   "seed": 101
+  },
+  {
+   "id": "h3_ring_draft8_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/table.png",
+   "expect_speech": "I'm not taking it back.",
+   "prompt": "The woman in <Picture 1> slides the ring off her finger, sets it on the table, looks up toward the window and says quietly \"I'm not taking it back.\"",
+   "quality": "draft8",
+   "seed": 202
+  },
+  {
+   "id": "h3_ring_full_s1",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/table.png",
+   "expect_speech": "I'm not taking it back.",
+   "prompt": "The woman in <Picture 1> slides the ring off her finger, sets it on the table, looks up toward the window and says quietly \"I'm not taking it back.\"",
+   "quality": "full",
+   "seed": 101
+  },
+  {
+   "id": "h3_ring_full_s2",
+   "backend": "h3",
+   "aspect": "16:9",
+   "seconds": 5,
+   "first_frame": "out/bench/assets/table.png",
+   "expect_speech": "I'm not taking it back.",
+   "prompt": "The woman in <Picture 1> slides the ring off her finger, sets it on the table, looks up toward the window and says quietly \"I'm not taking it back.\"",
+   "quality": "full",
+   "seed": 202
+  }
+ ]
+}
