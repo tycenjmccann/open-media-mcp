@@ -292,7 +292,7 @@
     "title": "MiniMax-H3-Image (MiniMax)",
     "license": "MiniMax-H3-Image Community License: not licensed in the US, EU, UK or Republic of Korea without MiniMax's written license; written authorization also needed above USD 1M annualized revenue or to host it for third parties; commercial products must show \"MiniMax-H3-Image\"",
     "notice": "Powered by MiniMax-H3-Image",
-    "output": "PNG, about 16 MP (full: 1:1 is 4096x4096, 16:9 is 5472x3072) or 4 MP (draft), 1-4 per job; text-to-image, or an edit of up to 16 reference images (<Picture 1> is the image to edit)",
+    "output": "PNG, about 16 MP (full: 1:1 is 4096x4096, 16:9 is 5472x3072) or 4 MP (draft), 1-4 per job; text-to-image, or an edit of up to 16 reference images (<Picture 1> is the image to edit). tuning.easyfix: on (default) = cleaner skin, fur and stone on text-to-image; off = the stock, more rugged look; compare = both for each seed (EasyFix first), twice the render. Edits of reference images are always stock",
     "aspects": [
       "auto",
       "1:1",
@@ -329,12 +329,18 @@
       "refs": 16
     },
     "tuning": {
-      "enhance_prompt": true
+      "enhance_prompt": true,
+      "easyfix": "on"
     },
     "tuning_choices": {
       "enhance_prompt": [
         false,
         true
+      ],
+      "easyfix": [
+        "on",
+        "off",
+        "compare"
       ]
     },
     "recipes": {

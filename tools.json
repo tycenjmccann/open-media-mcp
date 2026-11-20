@@ -322,7 +322,7 @@
         },
         "tuning": {
           "type": "object",
-          "description": "h3-image: {enhance_prompt: false} sends your prompt to the model unchanged (write a full, detailed English caption).",
+          "description": "h3-image: {enhance_prompt: false} sends your prompt to the model unchanged (write a full, detailed English caption). {easyfix: on | off | compare} for text-to-image: on (default) draws cleaner skin, fur and stone; off is the stock sampler, a rougher and more rugged look; compare returns both for each seed, EasyFix first (images[].easyfix says which), at twice the render. It is another way of drawing, not a polish, so on and off are different pictures of the same prompt. Edits of reference images are always stock.",
           "additionalProperties": true
         },
         "steps": {

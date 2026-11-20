@@ -79,6 +79,18 @@ if [[ ",$MEDIA_BACKENDS," == *",h3-image,"* ]]; then
   done
 fi
 
+# H3 Image EasyFix (Apache-2.0): the Steering + Re-Noise Sampler nodes behind h3-image's tuning.easyfix. Pinned to the
+# commit that was read and tested (2026-11-19); only its code and its one data table are kept.
+if [[ ",$MEDIA_BACKENDS," == *",h3-image,"* ]]; then
+  EF=/opt/media/ComfyUI/custom_nodes/ComfyUI-H3-Image-EasyFix
+  if [ ! -d "$EF" ]; then
+    git init -q "$EF" && git -C "$EF" remote add origin https://github.com/PedroMarinhoDev/ComfyUI-H3-Image-EasyFix.git
+    git -C "$EF" fetch -q --depth 1 origin "${MEDIA_H3_IMAGE_EASYFIX_REF:-a73c53594cd8c362736b69c24814e948a2730fcf}"
+    git -C "$EF" checkout -q FETCH_HEAD
+    rm -rf "$EF/assets" "$EF/tests" "$EF/workflows"
+  fi
+fi
+
 status "fetching models"
 wait $MODELS_PID || { cat /var/log/media-models.log; false; }
 cat /var/log/media-models.log

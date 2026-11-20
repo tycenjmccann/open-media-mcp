@@ -72,6 +72,11 @@ The prompt expander (`enhance_prompt`, on by default) sends MiniMax-H3-Image-PE'
 model set by `promptModel`, instead of running the PE weights. Those instructions are fetched at boot from the PE
 repo at a pinned revision (`h3ImagePeRef`), not vendored, because they ship under the same license.
 
+`tuning.easyfix` (`on` by default, `off`, `compare`) runs text-to-image through
+[ComfyUI-H3-Image-EasyFix](https://github.com/PedroMarinhoDev/ComfyUI-H3-Image-EasyFix) (Apache-2.0, by Pedro Marinho):
+its Steering and Re-Noise Sampler nodes, with the pack's own workflow settings. The worker fetches it at boot at a
+pinned commit; it is third-party code, not part of this repository.
+
 ```bash
 npx cdk deploy -c media:backends=wan2.2,qwen-image,h3-image
 ```

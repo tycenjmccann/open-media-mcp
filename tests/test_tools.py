@@ -89,9 +89,13 @@ def test_h3_image_normalize(monkeypatch):
     s = tools.normalize_image({"prompt": "Replace the taxi in <Picture 1> with a pink ice-cream truck", "backend": "h3-image",
                                "refs": [{"key": key}], "quality": "draft"}, CALLER)
     assert (s["aspect"], s["steps"], s["cfg"], s["quality"], s["refs"]) == ("auto", 6, 1.0, "draft", [{"key": key}])
-    assert s["tuning"] == {"enhance_prompt": True} and s["recipe"] == "r0"
+    assert s["tuning"] == {"enhance_prompt": True, "easyfix": "on"} and s["recipe"] == "r0"
     s = tools.normalize_image({"prompt": "x", "backend": "h3-image", "tuning": {"enhance_prompt": False}}, CALLER)
     assert s["tuning"]["enhance_prompt"] is False and s["quality"] == "full" and s["refs"] == []
+    for mode in ("on", "off", "compare"):
+        assert tools.normalize_image({"prompt": "x", "backend": "h3-image", "tuning": {"easyfix": mode}}, CALLER)["tuning"]["easyfix"] == mode
+    with pytest.raises(tools.ToolError):
+        tools.normalize_image({"prompt": "x", "backend": "h3-image", "tuning": {"easyfix": "both"}}, CALLER)
     for bad in ({"steps": 20}, {"cfg": 3}, {"negative_prompt": "blur"}, {"refs": [{"key": key}] * 17}, {"quality": "draft8"},
                 {"aspect": "7:5"}):
         with pytest.raises(tools.ToolError):

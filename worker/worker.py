@@ -728,17 +728,21 @@ def finish_image(job, spec, backend, hist, tmp, render_s, t_start, inputs=(), pr
     if backend.notice:
         tags["Copyright"] = backend.notice
     base = f"outputs/{job_id}/"
+    # one record per PNG, in output order: its seed, and what else tells the images of one job apart (h3-image: easyfix)
+    meta = backend.image_meta(spec) if hasattr(backend, "image_meta") else [{"seed": spec["seed"] + i} for i in range(len(raws))]
+    if len(meta) != len(raws):
+        raise RuntimeError(f"{len(raws)} images came back for {len(meta)} asked")
     images = []
     for i, raw in enumerate(raws):
         name = f"{job_id}.png" if len(raws) == 1 else f"{job_id}_{i + 1}.png"
         path = os.path.join(tmp, name)
         info = PngImagePlugin.PngInfo()
-        for k, v in {**tags, "seed": str(spec["seed"] + i)}.items():
+        for k, v in {**tags, **{k: str(v) for k, v in meta[i].items()}}.items():
             info.add_text(k, v)
         with Image.open(raw) as im:
             im.save(path, pnginfo=info)
             w, h = im.size
-        images.append({"key": base + name, "path": path, "seed": spec["seed"] + i, "width": w, "height": h,
+        images.append({"key": base + name, "path": path, **meta[i], "width": w, "height": h,
                        "sha256": sha256(path), "bytes": os.path.getsize(path)})
     manifest = {
         "schema": "open-media-mcp/provenance/v1",
@@ -765,7 +769,7 @@ def finish_image(job, spec, backend, hist, tmp, render_s, t_start, inputs=(), pr
         s3.upload_file(im["path"], E["MEDIA_BUCKET"], im["key"], ExtraArgs={"ContentType": "image/png"})
     s3.upload_file(mpath, E["MEDIA_BUCKET"], base + "manifest.json", ExtraArgs={"ContentType": "application/json"})
     return {
-        "output": {"images": [{k: im[k] for k in ("key", "seed", "width", "height", "sha256")} for im in images],
+        "output": {"images": [{k: im[k] for k in ("key", "seed", "easyfix", "width", "height", "sha256") if k in im} for im in images],
                    "manifest_key": base + "manifest.json"},
         "timings": {"render_s": round(render_s, 1), "total_s": round(time.time() - t_start, 1)},
         "moderation": moderation,

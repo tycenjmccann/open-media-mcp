@@ -114,7 +114,8 @@ def test_h3_r1_knobs():
 
 def test_h3_image_t2i_graph():
     m = B["h3-image"]
-    g = m.build_graph({"prompt": "a lighthouse", "aspect": "16:9", "quality": "full", "count": 1, "seed": 7}, prep(), {}, "j8")
+    off = {"tuning": {"easyfix": "off"}}  # the stock template sampler
+    g = m.build_graph({"prompt": "a lighthouse", "aspect": "16:9", "quality": "full", "count": 1, "seed": 7, **off}, prep(), {}, "j8")
     assert g["unet"]["inputs"]["unet_name"] == "minimax_h3_image_pruned_int8_convrot.safetensors"
     assert g["clip"]["inputs"] == {"clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors", "type": "minimax", "device": "default"}
     c = g["cond"]["inputs"]
@@ -122,12 +123,41 @@ def test_h3_image_t2i_graph():
     ks = g["ks"]["inputs"]
     assert (ks["steps"], ks["cfg"], ks["sampler_name"], ks["scheduler"]) == (6, 1.0, "euler", "simple")
     assert ks["latent_image"] == ["cond", 1] and ks["negative"] == ["neg", 0] and "ks_2" not in g
-    g = m.build_graph({"prompt": "p", "aspect": "auto", "quality": "draft", "count": 2, "seed": 7}, prep(), {}, "j9")
+    assert "steer" not in g and "renoise" not in g
+    g = m.build_graph({"prompt": "p", "aspect": "auto", "quality": "draft", "count": 2, "seed": 7, **off}, prep(), {}, "j9")
     assert (g["cond"]["inputs"]["width"], g["cond"]["inputs"]["height"]) == (2048, 2048)
     assert [g[k]["inputs"]["seed"] for k in ("ks", "ks_2")] == [7, 8] and g["save_2"]["inputs"]["filename_prefix"] == "jobs/j9_2"
     assert m.kind == "image" and m.notice == "Powered by MiniMax-H3-Image"
     # the text encoder is the h3 video backend's file, so enabling both fetches it once
     assert set(m.models) & set(B["h3"].models)
+
+
+def test_h3_image_easyfix_is_on_by_default_and_compare_draws_each_seed_both_ways(tmp_path):
+    m = B["h3-image"]
+    spec = {"prompt": "p", "aspect": "1:1", "quality": "draft", "count": 1, "seed": 7}
+    g = m.build_graph(spec, prep(), {}, "j")  # default: EasyFix, the pack's own workflow settings
+    assert g["ks"]["class_type"] == "SamplerCustomAdvanced" and "neg" not in g
+    assert g["ks"]["inputs"] == {"noise": ["noise", 0], "guider": ["guide", 0], "sampler": ["renoise", 0],
+                                 "sigmas": ["sigmas", 0], "latent_image": ["cond", 1]}
+    assert g["noise"]["inputs"]["noise_seed"] == 7 and g["guide"]["inputs"]["model"] == ["steer", 0]
+    assert g["steer"]["inputs"] == {"model": ["unet", 0], "strength": 0.7, "steps": "0"}
+    assert g["renoise"]["inputs"] == {"plan": "RNmid", "custom_plan": "SSRRRS", "s_noise": 0.95, "sampler": ["inner", 0]}
+    assert g["inner"]["inputs"]["sampler_name"] == "euler_ancestral" and g["sigmas"]["inputs"]["sigmas"].startswith("1.0, 0.9675")
+    assert m.image_meta(spec) == [{"seed": 7, "easyfix": "on"}]
+    both = {**spec, "count": 2, "tuning": {"easyfix": "compare"}}
+    g = m.build_graph(both, prep(), {}, "j")  # EasyFix then stock for each seed, in the order the worker names the files
+    assert [g[k]["class_type"] for k in ("ks", "ks_2", "ks_3", "ks_4")] == ["SamplerCustomAdvanced", "KSampler"] * 2
+    assert (g["noise"]["inputs"]["noise_seed"], g["ks_2"]["inputs"]["seed"], g["noise_3"]["inputs"]["noise_seed"],
+            g["ks_4"]["inputs"]["seed"]) == (7, 7, 8, 8)
+    assert [g[k]["inputs"]["filename_prefix"] for k in ("save", "save_2", "save_3", "save_4")] == [f"jobs/j_{i}" for i in (1, 2, 3, 4)]
+    assert m.image_meta(both) == [{"seed": 7, "easyfix": "on"}, {"seed": 7, "easyfix": "off"},
+                                  {"seed": 8, "easyfix": "on"}, {"seed": 8, "easyfix": "off"}]
+    from PIL import Image  # an edit always samples the stock way, whatever the knob says
+    a = str(tmp_path / "a.png")
+    Image.new("RGB", (800, 800)).save(a)
+    g = m.build_graph({**both, "count": 1}, {**prep(), "refs": [a]}, {a: "A"}, "j")
+    assert g["ks"]["class_type"] == "KSampler" and "ks_2" not in g and "steer" not in g
+    assert m.image_meta({**both, "count": 1, "refs": [{"key": "k"}]}) == [{"seed": 7, "easyfix": "off"}]
 
 
 def test_h3_image_edit_wires_refs_in_order_and_matches_the_edited_ratio(tmp_path):

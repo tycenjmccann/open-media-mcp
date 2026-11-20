@@ -493,7 +493,10 @@ def submit(spec, args, caller):
         raise
     sqs.send_message(QueueUrl=E["MEDIA_QUEUE_URL"], MessageBody=json.dumps({"job_id": job_id}))
     f["queued"] += 1
-    render = estimate(spec["backend"], spec.get("seconds"), spec["quality"], spec.get("count", 1), spec.get("steps"))
+    images = spec.get("count", 1)
+    if (spec.get("tuning") or {}).get("easyfix") == "compare" and not spec.get("refs"):
+        images *= 2  # h3-image: both ways of drawing each seed
+    render = estimate(spec["backend"], spec.get("seconds"), spec["quality"], images, spec.get("steps"))
     f = scale_out(f, render)
     warm = ready_workers(f) > 0
     ahead = f["queued"] - 1 + f["in_flight"]
@@ -562,7 +565,8 @@ def get_job(args, caller):
                              "manifest_url": _url(o["manifest_key"]), "duration_s": o["duration_s"], "sha256": o["sha256"],
                              "expires_in_s": PRESIGN_TTL, "download": "curl -sfo track.wav '<audio_url>'"}
         elif "images" in o:
-            imgs = [{"url": _url(i["key"]), **{k: i[k] for k in ("seed", "width", "height", "sha256")}} for i in o["images"]]
+            imgs = [{"url": _url(i["key"]), **{k: i[k] for k in ("seed", "easyfix", "width", "height", "sha256") if k in i}}
+                    for i in o["images"]]
             out["output"] = {"image_url": imgs[0]["url"], "images": imgs, "manifest_url": _url(o["manifest_key"]),
                              "expires_in_s": PRESIGN_TTL, "download": "curl -sfo image.png '<image_url>'"}
         else:
